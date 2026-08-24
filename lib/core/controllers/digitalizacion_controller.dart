@@ -786,12 +786,16 @@ class DigitalizacionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void actualizarPunto(PuntoEstructura puntoActualizado) {
+  Future<void> actualizarPunto(PuntoEstructura puntoActualizado) async {
     final index = puntos.indexWhere((p) => p.id == puntoActualizado.id);
     if (index != -1) {
       puntos[index] = puntoActualizado;
       notifyListeners();
-      DatabaseHelper().saveEstructuraCompleta(puntoActualizado);
+      try {
+        await DatabaseHelper().actualizarEstructuraAtributos(puntoActualizado);
+      } catch (e) {
+        debugPrint('[DigitalizacionController] ❌ Error guardando atributos de punto en SQLite: $e');
+      }
     }
   }
 

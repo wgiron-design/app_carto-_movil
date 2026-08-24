@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       dbPath,
-      version: 8,
+      version: 9,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onConfigure: _onConfigure,
@@ -59,36 +59,89 @@ class DatabaseHelper {
         VALUES ('default_upm', 'UPM por defecto', datetime('now'), 0, 0)
       ''');
 
-      // 2. Tipos de estructura
+      // 2. Tipos de estructura (FORMAL y REFERENCIA, igual que Postgres)
       await db.execute('''
-        INSERT OR IGNORE INTO cat_estructuras_tipo (id, nombre, descripcion) VALUES
-        (1, 'Formal', 'Estructura formal / edificación'),
-        (2, 'Referencia Geográfica', 'Punto de referencia geográfico')
+        INSERT OR IGNORE INTO cat_estructuras_tipo (id, nombre) VALUES
+        (1, 'FORMAL'),
+        (2, 'REFERENCIA')
       ''');
 
-      // 3. Categorías de estructura
-      await db.execute('''
-        INSERT OR IGNORE INTO cat_estructuras_categoria (id, nombre, descripcion) VALUES
-        (1, 'Vivienda / Residencial', 'Formal'),
-        (2, 'Comercial / Negocio', 'Formal'),
-        (3, 'Educación / Escuela', 'Formal'),
-        (4, 'Salud / Clínica', 'Formal'),
-        (5, 'Religioso / Iglesia', 'Formal'),
-        (6, 'Gubernamental / Institucional', 'Formal'),
-        (7, 'Industrial / Bodega', 'Formal'),
-        (8, 'Otro Formal', 'Formal'),
-        (9, 'Cruce de Caminos', 'Referencia'),
-        (10, 'Puente', 'Referencia'),
-        (11, 'Monumento / Plaza', 'Referencia'),
-        (12, 'Árbol / Elemento Natural', 'Referencia'),
-        (13, 'Tanque de Agua', 'Referencia'),
-        (14, 'Cancha Deportiva', 'Referencia'),
-        (15, 'Punto de Referencia', 'Referencia')
-      ''');
+      // 3. Categorías de estructura — catálogo completo (59 registros, igual que Postgres)
+      // TIPO 1 = FORMAL (id 1-42)
+      final categoriasSQL = [
+        "(1,  'Vivienda', 1)",
+        "(2,  'Vivienda Multifamiliar', 1)",
+        "(3,  'Vivienda y Comercio', 1)",
+        "(4,  'Comercio o Servicio', 1)",
+        "(5,  'Vivienda Multifamiliar y Comercio', 1)",
+        "(6,  'Vivienda en Construcción', 1)",
+        "(7,  'Colegios Privados', 1)",
+        "(8,  'Institutos', 1)",
+        "(9,  'Escuelas Oficiales', 1)",
+        "(10, 'Iglesia Católica', 1)",
+        "(11, 'Iglesia Evangélica', 1)",
+        "(12, 'Iglesia Adventista', 1)",
+        "(13, 'Iglesia Mormona', 1)",
+        "(14, 'Iglesia Testigos de Jehová', 1)",
+        "(15, 'Institución Gubernamental', 1)",
+        "(16, 'Instituciones de Salud Pública (Nacional)', 1)",
+        "(17, 'Biblioteca', 1)",
+        "(18, 'Gasolinera', 1)",
+        "(19, 'Industrias o Fábricas', 1)",
+        "(20, 'Teatros o Cines', 1)",
+        "(21, 'Bancos', 1)",
+        "(22, 'Edificio de Apartamentos', 1)",
+        "(23, 'Edificio Comercial', 1)",
+        "(24, 'Edificio de Apartamentos y Comercio', 1)",
+        "(25, 'Hotel o Pensión', 1)",
+        "(26, 'Aeropuerto', 1)",
+        "(27, 'Centros Comerciales', 1)",
+        "(28, 'Mercados Municipales', 1)",
+        "(29, 'Museos o Sitios Arqueológicos', 1)",
+        "(30, 'Salón de Usos Múltiples', 1)",
+        "(31, 'Universidad', 1)",
+        "(32, 'Bodega', 1)",
+        "(33, 'Bomberos', 1)",
+        "(34, 'Municipalidad o Ayuntamiento', 1)",
+        "(35, 'Reserva, Brigada o Complejo Militar', 1)",
+        "(36, 'Policía Nacional Civil', 1)",
+        "(37, 'Instalaciones de Salud Privada', 1)",
+        "(38, 'Estadio', 1)",
+        "(39, 'Asociaciones Benéficas', 1)",
+        "(40, 'ONGs', 1)",
+        "(41, 'Coliseos', 1)",
+        "(42, 'Planta de Tratamiento de Agua', 1)",
+        // TIPO 2 = REFERENCIA (id 43-59)
+        "(43, 'PARQUEO', 2)",
+        "(44, 'ANTENA TELEFONICA O RADIAL', 2)",
+        "(45, 'PARQUE', 2)",
+        "(46, 'PLAZA O CENTRO RECREATIVO', 2)",
+        "(47, 'PUENTE VEHICULAR', 2)",
+        "(48, 'POZO O TANQUE', 2)",
+        "(49, 'GRIFO', 2)",
+        "(50, 'CEMENTERIO', 2)",
+        "(51, 'PILA MUNICIPAL', 2)",
+        "(52, 'CAMPOS DE DEPORTES', 2)",
+        "(53, 'ANTENA ELECTRICA', 2)",
+        "(54, 'PUENTE PEATONAL', 2)",
+        "(55, 'ALTARES MAYAS', 2)",
+        "(56, 'GARITA DE SEGURIDAD', 2)",
+        "(57, 'VERTEDERO MUNICIPAL', 2)",
+        "(58, 'MUELLE O PUERTO', 2)",
+        "(59, 'TERMINAL DE BUSES', 2)",
+      ];
+
+      // Insertar de a lotes para evitar SQLite max compound-select
+      for (final row in categoriasSQL) {
+        await db.execute(
+          'INSERT OR IGNORE INTO cat_estructuras_categoria (id, nombre, tipo) VALUES $row',
+        );
+      }
     } catch (e) {
       // Evitar que un error en seed bloquee la app
     }
   }
+
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
@@ -195,6 +248,20 @@ class DatabaseHelper {
         } catch (_) {}
       }
     }
+    if (oldVersion < 9) {
+      // Eliminar tablas virtuales rtree que no están soportadas en el SQLite de Android
+      for (final t in ['upm_index', 'caminos_index', 'estructuras_index']) {
+        try {
+          await db.execute('DROP TABLE IF EXISTS $t');
+        } catch (_) {}
+      }
+      // Crear índices normales equivalentes
+      try { await db.execute('CREATE INDEX IF NOT EXISTS idx_upm_bbox ON upm (min_x, max_x, min_y, max_y)'); } catch (_) {}
+      try { await db.execute('CREATE INDEX IF NOT EXISTS idx_caminos_bbox ON caminos (min_x, max_x, min_y, max_y)'); } catch (_) {}
+      try { await db.execute('CREATE INDEX IF NOT EXISTS idx_estructuras_xy ON estructuras (x, y)'); } catch (_) {}
+      // Agregar columna tipo a cat_estructuras_categoria si no existe
+      try { await db.execute('ALTER TABLE cat_estructuras_categoria ADD COLUMN tipo INTEGER'); } catch (_) {}
+    }
   }
 
   Future<void> _onConfigure(Database db) async {
@@ -223,13 +290,8 @@ class DatabaseHelper {
       )
     ''');
     
-    await db.execute('''
-      CREATE VIRTUAL TABLE upm_index USING rtree(
-        id_index,
-        min_x, max_x,
-        min_y, max_y
-      )
-    ''');
+    // Índice normal en columnas de bounding box (rtree no disponible en Android)
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_upm_bbox ON upm (min_x, max_x, min_y, max_y)');
 
     await db.execute('''
       CREATE TABLE caminos (
@@ -252,18 +314,14 @@ class DatabaseHelper {
       )
     ''');
     
-    await db.execute('''
-      CREATE VIRTUAL TABLE caminos_index USING rtree(
-        id_index,
-        min_x, max_x,
-        min_y, max_y
-      )
-    ''');
+    // Índice normal en columnas de bounding box (rtree no disponible en Android)
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_caminos_bbox ON caminos (min_x, max_x, min_y, max_y)');
 
     await db.execute('''
       CREATE TABLE IF NOT EXISTS cat_estructuras_categoria (
         id INTEGER PRIMARY KEY,
         nombre TEXT NOT NULL,
+        tipo INTEGER,
         descripcion TEXT
       )
     ''');
@@ -304,13 +362,8 @@ class DatabaseHelper {
       )
     ''');
     
-    await db.execute('''
-      CREATE VIRTUAL TABLE estructuras_index USING rtree(
-        id_index,
-        min_x, max_x,
-        min_y, max_y
-      )
-    ''');
+    // Índice normal en columna de coordenadas (rtree no disponible en Android)
+    await db.execute('CREATE INDEX IF NOT EXISTS idx_estructuras_xy ON estructuras (x, y)');
 
     await db.execute('''
       CREATE TABLE niveles (
@@ -407,8 +460,31 @@ class DatabaseHelper {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // OPERACIONES ESPECÍFICAS DE JERARQUÍA
+  // OPERACIONES ESPECÍFICAS DE ESTRUCTURAS Y JERARQUÍA
   // ─────────────────────────────────────────────────────────────────────────────
+
+  /// Actualiza únicamente los atributos de una estructura en SQLite (nombre, categoría, tipo, estado, niveles_cantidad, notas)
+  /// sin tocar ni borrar sus niveles, locales y hogares hijos.
+  Future<void> actualizarEstructuraAtributos(PuntoEstructura estructura, {String upmId = 'default_upm'}) async {
+    try {
+      final db = await database;
+      // Asegurar que exista el registro padre en upm
+      await db.execute('''
+        INSERT OR IGNORE INTO upm (id, nombre, updated_at, sync_dirty, sync_version)
+        VALUES (?, 'UPM por defecto', datetime('now'), 0, 0)
+      ''', [upmId]);
+
+      final estMap = estructura.toMapDB(upmId);
+      int countEst = await db.update('estructuras', estMap, where: 'id = ?', whereArgs: [estructura.id]);
+      if (countEst == 0) {
+        await db.insert('estructuras', estMap);
+      }
+      debugPrint('[DatabaseHelper] ✅ Estructura "${estructura.nombre}" (${estructura.id}) actualizada en SQLite con sync_dirty=1');
+    } catch (e, stack) {
+      debugPrint('[DatabaseHelper] ❌ Error en actualizarEstructuraAtributos: $e\n$stack');
+      rethrow;
+    }
+  }
 
   /// Guarda una estructura con toda su jerarquía (Niveles, Locales, Hogares)
   Future<void> saveEstructuraCompleta(PuntoEstructura estructura, {String upmId = 'default_upm'}) async {
@@ -426,65 +502,61 @@ class DatabaseHelper {
         int countEst = await txn.update('estructuras', estMap, where: 'id = ?', whereArgs: [estructura.id]);
         if (countEst == 0) await txn.insert('estructuras', estMap);
 
-        // 2. Limpiar niveles que fueron eliminados en UI
-        final nivelIds = estructura.niveles.map((n) => n.id).toList();
-        if (nivelIds.isNotEmpty) {
+        // 2. Solo limpiar/actualizar niveles si estructura.niveles no está vacío
+        if (estructura.niveles.isNotEmpty) {
+          final nivelIds = estructura.niveles.map((n) => n.id).toList();
           await txn.delete('niveles', 
               where: 'estructura_id = ? AND id NOT IN (${List.filled(nivelIds.length, '?').join(', ')})', 
               whereArgs: [estructura.id, ...nivelIds]);
-        } else {
-          await txn.delete('niveles', where: 'estructura_id = ?', whereArgs: [estructura.id]);
-        }
 
-        for (var nivel in estructura.niveles) {
-          final nivelMap = nivel.toMapDB();
-          int countNiv = await txn.update('niveles', nivelMap, where: 'id = ?', whereArgs: [nivel.id]);
-          if (countNiv == 0) await txn.insert('niveles', nivelMap);
+          for (var nivel in estructura.niveles) {
+            final nivelMap = nivel.toMapDB();
+            int countNiv = await txn.update('niveles', nivelMap, where: 'id = ?', whereArgs: [nivel.id]);
+            if (countNiv == 0) await txn.insert('niveles', nivelMap);
 
-          // Limpiar locales eliminados
-          final localIds = nivel.locales.map((l) => l.id).toList();
-          if (localIds.isNotEmpty) {
-            await txn.delete('locales', 
-                where: 'nivel_id = ? AND id NOT IN (${List.filled(localIds.length, '?').join(', ')})', 
-                whereArgs: [nivel.id, ...localIds]);
-          } else {
-            await txn.delete('locales', where: 'nivel_id = ?', whereArgs: [nivel.id]);
-          }
+            if (nivel.locales.isNotEmpty) {
+              final localIds = nivel.locales.map((l) => l.id).toList();
+              await txn.delete('locales', 
+                  where: 'nivel_id = ? AND id NOT IN (${List.filled(localIds.length, '?').join(', ')})', 
+                  whereArgs: [nivel.id, ...localIds]);
 
-          for (var local in nivel.locales) {
-            final localMap = local.toMapDB();
-            int countLoc = await txn.update('locales', localMap, where: 'id = ?', whereArgs: [local.id]);
-            if (countLoc == 0) await txn.insert('locales', localMap);
+              for (var local in nivel.locales) {
+                final localMap = local.toMapDB();
+                int countLoc = await txn.update('locales', localMap, where: 'id = ?', whereArgs: [local.id]);
+                if (countLoc == 0) await txn.insert('locales', localMap);
 
-            // Limpiar hogares eliminados
-            final hogarIds = local.hogares.map((h) => h.id).toList();
-            if (hogarIds.isNotEmpty) {
-              await txn.delete('hogares', 
-                  where: 'local_id = ? AND id NOT IN (${List.filled(hogarIds.length, '?').join(', ')})', 
-                  whereArgs: [local.id, ...hogarIds]);
-            } else {
-              await txn.delete('hogares', where: 'local_id = ?', whereArgs: [local.id]);
-            }
+                if (local.hogares.isNotEmpty) {
+                  final hogarIds = local.hogares.map((h) => h.id).toList();
+                  await txn.delete('hogares', 
+                      where: 'local_id = ? AND id NOT IN (${List.filled(hogarIds.length, '?').join(', ')})', 
+                      whereArgs: [local.id, ...hogarIds]);
 
-            for (var hogar in local.hogares) {
-              final hogarMap = hogar.toMapDB();
-              int countHog = await txn.update('hogares', hogarMap, where: 'id = ?', whereArgs: [hogar.id]);
-              if (countHog == 0) await txn.insert('hogares', hogarMap);
+                  for (var hogar in local.hogares) {
+                    final hogarMap = hogar.toMapDB();
+                    int countHog = await txn.update('hogares', hogarMap, where: 'id = ?', whereArgs: [hogar.id]);
+                    if (countHog == 0) await txn.insert('hogares', hogarMap);
+                  }
+                }
+              }
             }
           }
         }
       });
-    } catch (e) {
-      // Registrar log si hay error
+      debugPrint('[DatabaseHelper] ✅ Estructura completa guardada en SQLite: ${estructura.id}');
+    } catch (e, stack) {
+      debugPrint('[DatabaseHelper] ❌ Error en saveEstructuraCompleta: $e\n$stack');
+      rethrow;
     }
   }
 
   /// Recupera todas las estructuras y reconstruye su jerarquía de objetos
-  Future<List<PuntoEstructura>> getEstructuras({String upmId = 'default_upm'}) async {
+  Future<List<PuntoEstructura>> getEstructuras({String? upmId}) async {
     final db = await database;
     
     // Obtener estructuras
-    final estMaps = await db.query('estructuras', where: 'upm_id = ?', whereArgs: [upmId]);
+    final estMaps = (upmId != null && upmId != 'default_upm')
+        ? await db.query('estructuras', where: 'upm_id = ? AND deleted_at IS NULL', whereArgs: [upmId])
+        : await db.query('estructuras', where: 'deleted_at IS NULL');
     if (estMaps.isEmpty) return [];
 
     final estIds = estMaps.map((e) => e['id'] as String).toList();

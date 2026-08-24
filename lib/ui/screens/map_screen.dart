@@ -1144,7 +1144,7 @@ class _MapScreenState extends State<MapScreen> {
       );
 
       // Persistir actualización de atributos
-      digCtrl.actualizarPunto(puntoActualizado);
+      await digCtrl.actualizarPunto(puntoActualizado);
 
       // ── PASO 4: Navegar a JerarquiaScreen ────────────────────────────────
       if (!mounted) return;
@@ -1445,7 +1445,8 @@ class _MapScreenState extends State<MapScreen> {
                           deviceId: punto.deviceId,
                           syncVersion: punto.syncVersion,
                         );
-                        digCtrl.actualizarPunto(puntoEditado);
+                        await digCtrl.actualizarPunto(puntoEditado);
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('✅ Estructura "${result.nombre}" actualizada.'),
