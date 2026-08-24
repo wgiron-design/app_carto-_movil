@@ -5,10 +5,12 @@ from datetime import datetime
 import re
 
 class RoleEnum(str, Enum):
+    ADMIN = "admin"
     ADMINISTRADOR = "administrador"
     MONITOR = "monitor"
     SUPERVISOR = "supervisor"
     CARTOGRAFO = "cartografo"
+    CONSULTA = "consulta"
     GERENTE = "gerente"
 
 class UserRegister(BaseModel):
@@ -44,7 +46,8 @@ class UserResponse(BaseModel):
     id: str
     username: str
     email: str
-    role: RoleEnum
+    role: str
+    id_cat_rol: Optional[str] = None
     is_active: bool
     created_at: datetime
     last_login_at: Optional[datetime] = None

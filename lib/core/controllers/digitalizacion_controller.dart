@@ -656,15 +656,6 @@ class DigitalizacionController extends ChangeNotifier {
     notifyListeners();
     // Guardado persistente en SQLite local
     DatabaseHelper().saveEstructuraCompleta(puntoConAuditoria);
-    // Sincronizar inmediatamente con PostGIS en Neon
-    PostGISService().guardarFeature('estructuras', puntoConAuditoria.toGeoJson()).then((exito) {
-      if (exito) {
-        _onlinePostGIS = true;
-      } else {
-        _ultimoErrorSync = '⚠️ Punto guardado localmente pero no se pudo sincronizar con el servidor';
-      }
-      notifyListeners();
-    });
   }
 
   /// Registra un punto en memoria + SQLite localmente, SIN enviarlo a PostGIS.
@@ -677,7 +668,6 @@ class DigitalizacionController extends ChangeNotifier {
     puntos.add(punto);
     notifyListeners();
     DatabaseHelper().saveEstructuraCompleta(punto);
-    // NO se llama a PostGISService aquí. Se llamará en actualizarPunto().
   }
 
   /// Descarta un punto borrador (draft) en memoria y en SQLite cuando el usuario presiona "Cancelar".
@@ -710,16 +700,6 @@ class DigitalizacionController extends ChangeNotifier {
     
     _cancelarConstruccion();
     notifyListeners();
-
-    // Sincronizar inmediatamente con PostGIS en Neon
-    PostGISService().guardarFeature('caminos', linea.toGeoJson()).then((exito) {
-      if (exito) {
-        _onlinePostGIS = true;
-      } else {
-        _ultimoErrorSync = '⚠️ Línea guardada localmente pero no se pudo sincronizar con el servidor';
-      }
-      notifyListeners();
-    });
   }
 
   /// Finaliza el polígono en construcción y lo agrega a la colección.
@@ -769,16 +749,6 @@ class DigitalizacionController extends ChangeNotifier {
 
     _cancelarConstruccion();
     notifyListeners();
-
-    // Sincronizar inmediatamente con PostGIS en Neon
-    PostGISService().guardarFeature('upms', poligono.toGeoJson()).then((exito) {
-      if (exito) {
-        _onlinePostGIS = true;
-      } else {
-        _ultimoErrorSync = '⚠️ Polígono guardado localmente pero no se pudo sincronizar con el servidor';
-      }
-      notifyListeners();
-    });
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -812,8 +782,6 @@ class DigitalizacionController extends ChangeNotifier {
     }
     if (_idSeleccionado == id) _idSeleccionado = null;
     notifyListeners();
-    // Soft-delete en PostGIS vía API
-    PostGISService().eliminarFeature('estructuras', id, updatedBy: updatedBy);
   }
 
   void actualizarPunto(PuntoEstructura puntoActualizado) {
@@ -822,7 +790,6 @@ class DigitalizacionController extends ChangeNotifier {
       puntos[index] = puntoActualizado;
       notifyListeners();
       DatabaseHelper().saveEstructuraCompleta(puntoActualizado);
-      PostGISService().guardarFeature('estructuras', puntoActualizado.toGeoJson());
     }
   }
 
@@ -835,7 +802,6 @@ class DigitalizacionController extends ChangeNotifier {
     }
     if (_idSeleccionado == id) _idSeleccionado = null;
     notifyListeners();
-    PostGISService().eliminarFeature('caminos', id, updatedBy: updatedBy);
   }
 
   void eliminarPoligono(String id, {String? updatedBy}) {
@@ -847,7 +813,6 @@ class DigitalizacionController extends ChangeNotifier {
     }
     if (_idSeleccionado == id) _idSeleccionado = null;
     notifyListeners();
-    PostGISService().eliminarFeature('upms', id, updatedBy: updatedBy);
   }
 
   void eliminarUltimoVertice() {
@@ -1072,7 +1037,6 @@ class DigitalizacionController extends ChangeNotifier {
 
     poligonos[index] = modificada;
     DatabaseHelper().insertEntity('upm', modificada.toMapDB());
-    PostGISService().guardarFeature('upms', modificada.toGeoJson());
 
     _idPoligonoEditando = null;
     _verticePoligonoIndex = null;
@@ -1226,7 +1190,6 @@ class DigitalizacionController extends ChangeNotifier {
 
     poligonos[index] = modificada;
     DatabaseHelper().insertEntity('upm', modificada.toMapDB());
-    PostGISService().guardarFeature('upms', modificada.toGeoJson());
     notifyListeners();
   }
 
@@ -1372,7 +1335,6 @@ class DigitalizacionController extends ChangeNotifier {
 
       lineas[lineaIndex] = modificada;
       DatabaseHelper().insertEntity('caminos', modificada.toMapDB());
-      PostGISService().guardarFeature('caminos', modificada.toGeoJson());
     }
 
     _dragLineaActivo = false;
@@ -1607,12 +1569,10 @@ class DigitalizacionController extends ChangeNotifier {
     // ── Paso 8: Persistir — borrar original e insertar segmentos ─────────
     lineas.removeWhere((l) => l.id == original.id);
     DatabaseHelper().deleteEntity('caminos', original.id);
-    PostGISService().eliminarFeature('caminos', original.id);
 
     for (int i = 0; i < nuevasLineas.length; i++) {
       lineas.insert(index + i, nuevasLineas[i]);
       DatabaseHelper().insertEntity('caminos', nuevasLineas[i].toMapDB());
-      PostGISService().guardarFeature('caminos', nuevasLineas[i].toGeoJson());
     }
 
     // ── Paso 9: Limpiar estado — mantener modo edición activo ────────────
@@ -1634,18 +1594,16 @@ class DigitalizacionController extends ChangeNotifier {
     final original = operacion.lineaOriginal;
     final segmentos = operacion.segmentosGenerados;
 
-    // Eliminar los segmentos de la lista, la BD y PostGIS
+    // Eliminar los segmentos de la lista y la BD local
     for (final seg in segmentos) {
       lineas.removeWhere((l) => l.id == seg.id);
       DatabaseHelper().deleteEntity('caminos', seg.id);
-      PostGISService().eliminarFeature('caminos', seg.id);
     }
 
     // Restaurar la línea original en la posición correcta
     final insertIdx = operacion.insertIndex.clamp(0, lineas.length);
     lineas.insert(insertIdx, original);
     DatabaseHelper().insertEntity('caminos', original.toMapDB());
-    PostGISService().guardarFeature('caminos', original.toGeoJson());
 
     _idSeleccionado = null;
     notifyListeners();
@@ -1734,13 +1692,15 @@ class DigitalizacionController extends ChangeNotifier {
     }
   }
 
-  Future<void> sincronizarOfflineBatch() async {
+  Future<bool> sincronizarOfflineBatch() async {
     final service = PostGISService();
     final dirtyPuntos = puntos.where((p) => p.syncDirty).toList();
     final dirtyLineas = lineas.where((l) => l.syncDirty).toList();
     final dirtyPoligonos = poligonos.where((p) => p.syncDirty).toList();
 
-    if (dirtyPuntos.isEmpty && dirtyLineas.isEmpty && dirtyPoligonos.isEmpty) return;
+    if (dirtyPuntos.isEmpty && dirtyLineas.isEmpty && dirtyPoligonos.isEmpty) {
+      return true;
+    }
 
     final ok = await service.sincronizarOfflineBatch(
       puntos: dirtyPuntos,
@@ -1751,7 +1711,9 @@ class DigitalizacionController extends ChangeNotifier {
     if (ok) {
       _onlinePostGIS = true;
       await cargarDesdePostGIS();
+      return true;
     }
+    return false;
   }
 
   /// Verifica cuántos elementos locales NO están en PostGIS.

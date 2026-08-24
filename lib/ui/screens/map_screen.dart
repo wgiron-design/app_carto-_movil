@@ -1368,124 +1368,157 @@ class _MapScreenState extends State<MapScreen> {
             const SizedBox(height: 16),
 
             // ── BOTONES DE ACCIÓN PARA EL PUNTO SELECCIONADO ────────────────
-            Builder(builder: (context) {
-              final auth = Provider.of<AuthController>(context, listen: false);
-              final esPropietario = (punto.createdBy == null) ||
-                  (auth.currentUserId != null && punto.createdBy.toString() == auth.currentUserId.toString());
+            if (digCtrl.modoEdicion) ...[
+              Builder(builder: (context) {
+                final auth = Provider.of<AuthController>(context, listen: false);
+                final esPropietario = (punto.createdBy == null) ||
+                    (auth.currentUserId != null && punto.createdBy.toString() == auth.currentUserId.toString());
 
-              return Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.account_tree_outlined, size: 16),
-                          label: const Text('Niveles', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF4FC3F7),
-                            foregroundColor: Colors.white,
-                          ),
-                          onPressed: () async {
-                            Navigator.pop(context);
-                            await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => NivelListaScreen(puntoEstructura: punto),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.edit_outlined, size: 16),
-                          label: const Text('Editar', style: TextStyle(fontSize: 12)),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFFFFB74D),
-                            side: const BorderSide(color: Color(0xFFFFB74D)),
-                          ),
-                          onPressed: () async {
-                            if (!esPropietario) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('⚠️ Solo el creador puede editar este elemento'),
-                                  backgroundColor: AppTheme.warning,
+                return Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.account_tree_outlined, size: 16),
+                            label: const Text('Niveles', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF4FC3F7),
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: () async {
+                              Navigator.pop(context);
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => NivelListaScreen(puntoEstructura: punto),
                                 ),
                               );
-                              return;
-                            }
-                            Navigator.pop(context);
-                            final result = await showDialog<AtributosPuntoResult>(
-                              context: context,
-                              builder: (_) => DialogoAtributosPunto(
-                                lat: punto.coordenadas.latitude,
-                                lng: punto.coordenadas.longitude,
-                                baseUrl: PostGISService().baseUrl,
-                                tipos: _tiposCatalogo,
-                                nombreInicial: punto.nombre,
-                                idCategoriaInicial: punto.idCategoria,
-                                idTipoInicial: punto.idTipo,
-                                estadoInicial: punto.estado,
-                                nivelesInicial: punto.nivelesCantidad,
-                                notasIniciales: punto.notas,
-                                soloLectura: !esPropietario,
-                                onAbrirNiveles: () async {
-                                  Navigator.pop(context);
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.edit_outlined, size: 16),
+                            label: const Text('Editar', style: TextStyle(fontSize: 12)),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFFFB74D),
+                              side: const BorderSide(color: Color(0xFFFFB74D)),
+                            ),
+                            onPressed: () async {
+                              if (!esPropietario) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('⚠️ Solo el creador puede editar este elemento'),
+                                    backgroundColor: AppTheme.warning,
+                                  ),
+                                );
+                                return;
+                              }
+                              Navigator.pop(context);
+                              final result = await showDialog<AtributosPuntoResult>(
+                                context: context,
+                                builder: (_) => DialogoAtributosPunto(
+                                  lat: punto.coordenadas.latitude,
+                                  lng: punto.coordenadas.longitude,
+                                  baseUrl: PostGISService().baseUrl,
+                                  tipos: _tiposCatalogo,
+                                  nombreInicial: punto.nombre,
+                                  idCategoriaInicial: punto.idCategoria,
+                                  idTipoInicial: punto.idTipo,
+                                  estadoInicial: punto.estado,
+                                  nivelesInicial: punto.nivelesCantidad,
+                                  notasIniciales: punto.notas,
+                                  soloLectura: !esPropietario,
+                                  onAbrirNiveles: () async {
+                                    Navigator.pop(context);
+                                    await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => NivelListaScreen(puntoEstructura: punto),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              );
+                              if (result != null && mounted && esPropietario) {
+                                final puntoEditado = PuntoEstructura(
+                                  id: punto.id,
+                                  coordenadas: punto.coordenadas,
+                                  nombre: result.nombre,
+                                  idCategoria: result.idCategoria,
+                                  idTipo: result.idTipo,
+                                  estado: result.estado,
+                                  nivelesCantidad: result.nivelesCantidad,
+                                  notas: result.notas,
+                                  niveles: punto.niveles,
+                                  fechaCreacion: punto.fechaCreacion,
+                                  updatedAt: DateTime.now(),
+                                  syncDirty: true,
+                                  createdBy: punto.createdBy,
+                                  updatedBy: auth.currentUserId,
+                                  deviceId: punto.deviceId,
+                                  syncVersion: punto.syncVersion,
+                                );
+                                digCtrl.actualizarPunto(puntoEditado);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('✅ Estructura "${result.nombre}" actualizada. Abriendo niveles...'),
+                                    backgroundColor: AppTheme.success,
+                                  ),
+                                );
+
+                                // Navegar a NivelListaScreen tras guardar edición
+                                if (mounted) {
                                   await Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => NivelListaScreen(puntoEstructura: punto),
+                                      builder: (_) => NivelListaScreen(puntoEstructura: puntoEditado),
                                     ),
                                   );
-                                },
-                              ),
-                            );
-                            if (result != null && mounted && esPropietario) {
-                              final puntoEditado = PuntoEstructura(
-                                id: punto.id,
-                                coordenadas: punto.coordenadas,
-                                nombre: result.nombre,
-                                idCategoria: result.idCategoria,
-                                idTipo: result.idTipo,
-                                estado: result.estado,
-                                nivelesCantidad: result.nivelesCantidad,
-                                notas: result.notas,
-                                niveles: punto.niveles,
-                                fechaCreacion: punto.fechaCreacion,
-                                updatedAt: DateTime.now(),
-                                syncDirty: true,
-                                createdBy: punto.createdBy,
-                                updatedBy: auth.currentUserId,
-                                deviceId: punto.deviceId,
-                                syncVersion: punto.syncVersion,
-                              );
-                              digCtrl.actualizarPunto(puntoEditado);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('✅ Estructura "${result.nombre}" actualizada. Abriendo niveles...'),
-                                  backgroundColor: AppTheme.success,
-                                ),
-                              );
-
-                              // Navegar a NivelListaScreen tras guardar edición
-                              if (mounted) {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => NivelListaScreen(puntoEstructura: puntoEditado),
-                                  ),
-                                );
+                                }
                               }
-                            }
-                          },
+                            },
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                  ],
+                );
+              }),
+            ] else ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.info_outline, size: 16),
+                  label: const Text('Ver Atributos', style: TextStyle(fontSize: 12)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.onSurface,
                   ),
-                ],
-              );
-            }),
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    await showDialog<AtributosPuntoResult>(
+                      context: context,
+                      builder: (_) => DialogoAtributosPunto(
+                        lat: punto.coordenadas.latitude,
+                        lng: punto.coordenadas.longitude,
+                        baseUrl: PostGISService().baseUrl,
+                        tipos: _tiposCatalogo,
+                        nombreInicial: punto.nombre,
+                        idCategoriaInicial: punto.idCategoria,
+                        idTipoInicial: punto.idTipo,
+                        estadoInicial: punto.estado,
+                        nivelesInicial: punto.nivelesCantidad,
+                        notasIniciales: punto.notas,
+                        soloLectura: true,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -2122,9 +2155,9 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _cerrarAplicacion(
-      BuildContext context, DigitalizacionController digCtrl, {bool esCierreDeApp = true}) async {
-    // 4.1 Bloqueo de cierre si el modo edición está activado (solo al intentar salir de la app)
-    if (esCierreDeApp && digCtrl.modoEdicion) {
+      BuildContext context, DigitalizacionController digCtrl) async {
+    // Bloqueo de cierre si el modo edición está activado
+    if (digCtrl.modoEdicion) {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -2156,68 +2189,7 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
 
-    // 1. Mostrar diálogo de "verificando..." mientras se consulta PostGIS
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const AlertDialog(
-        backgroundColor: AppTheme.surface,
-        content: Row(
-          children: [
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2.5),
-            ),
-            SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                'Verificando datos en PostGIS...',
-                style: TextStyle(color: AppTheme.onSurface, fontSize: 14),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    // 2. Consulta real al servidor
-    final int? faltantes = await digCtrl.verificarElementosSinGuardar();
-
-    // 3. Cerrar el diálogo de carga
-    if (context.mounted) Navigator.of(context).pop();
-
-    if (!context.mounted) return;
-
-    // 4a. Sin conexión → preguntar con advertencia
-    if (faltantes == null) {
-      _mostrarDialogoSalidaSinConexion(context, digCtrl);
-      return;
-    }
-
-    // 4b. Todo guardado
-    if (faltantes == 0) {
-      if (esCierreDeApp) {
-        _salirDeLaApp();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Modo edición desactivado. Todos los datos están sincronizados en PostGIS.'),
-            backgroundColor: AppTheme.success,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-      return;
-    }
-
-    // 4c. Hay elementos sin guardar → mostrar diálogo con opciones
-    _mostrarDialogoSalidaConPendientes(context, digCtrl, faltantes);
-  }
-
-  /// Diálogo cuando NO hay conexión a PostGIS al intentar salir.
-  void _mostrarDialogoSalidaSinConexion(
-      BuildContext context, DigitalizacionController digCtrl) {
+    // Diálogo de confirmación para salir
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2225,18 +2197,16 @@ class _MapScreenState extends State<MapScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
-            Icon(Icons.cloud_off, color: Color(0xFFFFB74D)),
+            Icon(Icons.power_settings_new, color: AppTheme.error),
             SizedBox(width: 8),
             Text(
-              'Sin conexión a PostGIS',
+              'Cerrar Aplicación',
               style: TextStyle(color: AppTheme.onSurface, fontSize: 16),
             ),
           ],
         ),
         content: const Text(
-          'No se pudo verificar si todos los elementos están guardados '
-          'porque no hay conexión con el servidor PostGIS.\n\n'
-          '¿Qué deseas hacer?',
+          '¿Desea cerrar la aplicación?',
           style: TextStyle(color: AppTheme.onSurface),
         ),
         actions: [
@@ -2244,74 +2214,24 @@ class _MapScreenState extends State<MapScreen> {
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Cancelar', style: TextStyle(color: AppTheme.primary)),
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _salirDeLaApp();
-            },
-            child: const Text('Salir sin guardar', style: TextStyle(color: AppTheme.error)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Diálogo cuando hay elementos sin guardar en PostGIS.
-  void _mostrarDialogoSalidaConPendientes(
-      BuildContext context, DigitalizacionController digCtrl, int faltantes) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
-          children: [
-            Icon(Icons.warning_amber_rounded, color: Color(0xFFFFB74D)),
-            SizedBox(width: 8),
-            Text(
-              'Elementos sin guardar',
-              style: TextStyle(color: AppTheme.onSurface, fontSize: 16),
-            ),
-          ],
-        ),
-        content: Text(
-          'Hay $faltantes elemento(s) que no se han guardado en PostGIS.\n\n'
-          '¿Qué deseas hacer?',
-          style: const TextStyle(color: AppTheme.onSurface),
-        ),
-        actions: [
-          // 1. Guardar
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF4CAF50),
+              backgroundColor: AppTheme.error,
               foregroundColor: Colors.white,
             ),
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              await _guardarYSalir(context, digCtrl);
-            },
-            child: const Text('Guardar'),
-          ),
-          // 2. Cancelar
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancelar', style: TextStyle(color: AppTheme.primary)),
-          ),
-          // 3. Salir sin guardar
-          TextButton(
             onPressed: () {
               Navigator.of(ctx).pop();
               _salirDeLaApp();
             },
-            child: const Text('Salir sin guardar', style: TextStyle(color: AppTheme.error)),
+            child: const Text('Salir'),
           ),
         ],
       ),
     );
   }
 
-  /// Sincroniza todos los elementos pendientes y luego cierra la app.
-  Future<void> _guardarYSalir(
+  /// Ejecuta la sincronización de archivos locales SQLite hacia Postgres/PostGIS.
+  Future<void> _ejecutarSincronizacion(
       BuildContext context, DigitalizacionController digCtrl) async {
     showDialog(
       context: context,
@@ -2331,7 +2251,7 @@ class _MapScreenState extends State<MapScreen> {
             SizedBox(width: 16),
             Expanded(
               child: Text(
-                'Guardando en PostGIS...',
+                'Sincronizando datos locales con Postgres...',
                 style: TextStyle(color: AppTheme.onSurface, fontSize: 14),
               ),
             ),
@@ -2340,11 +2260,28 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
 
-    await digCtrl.sincronizarOfflineBatch();
+    final bool exito = await digCtrl.sincronizarOfflineBatch();
 
     if (context.mounted) Navigator.of(context).pop();
+    if (!context.mounted) return;
 
-    _salirDeLaApp();
+    if (exito) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Datos sincronizados correctamente con Postgres.'),
+          backgroundColor: AppTheme.success,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ No se pudo sincronizar con Postgres. Verifique su conexión.'),
+          backgroundColor: AppTheme.error,
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   void _salirDeLaApp() {
@@ -2479,15 +2416,7 @@ class _MapScreenState extends State<MapScreen> {
                       scale: 0.7,
                       child: Switch(
                         value: digCtrl.modoEdicion,
-                        onChanged: (_) async {
-                          if (digCtrl.modoEdicion) {
-                            // Al cambiar de ON a OFF, desactiva modo edición y ejecuta verificación
-                            digCtrl.toggleModoEdicion();
-                            await _cerrarAplicacion(context, digCtrl, esCierreDeApp: false);
-                          } else {
-                            digCtrl.toggleModoEdicion();
-                          }
-                        },
+                        onChanged: (_) => digCtrl.toggleModoEdicion(),
                         activeColor: const Color(0xFFEF5350),
                       ),
                     ),
@@ -2585,10 +2514,41 @@ class _MapScreenState extends State<MapScreen> {
                   _SeccionCapa(titulo: 'Resumen'),
                   _buildResumen(digCtrl),
                 ],
+
+                const SizedBox(height: 14),
+                _buildBotonSincronizar(context, digCtrl),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBotonSincronizar(BuildContext context, DigitalizacionController digCtrl) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        icon: const Icon(Icons.sync, size: 18, color: Colors.white),
+        label: const Text(
+          'Sincronizar',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+            letterSpacing: 0.5,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF4CAF50),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          elevation: 2,
+        ),
+        onPressed: () => _ejecutarSincronizacion(context, digCtrl),
       ),
     );
   }

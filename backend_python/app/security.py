@@ -1,10 +1,15 @@
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import asyncpg
+import uuid
+
+from app.database import get_db_pool
+from app.core.constants import normalize_role, ADMIN_ROLES
 
 # Configuración de Hasher (argon2 como preferido, bcrypt como fallback)
 pwd_context = CryptContext(schemes=["argon2", "bcrypt"], deprecated="auto")
@@ -54,3 +59,66 @@ async def get_current_user_claims(credentials: Optional[HTTPAuthorizationCredent
             detail="No se proporcionaron credenciales de autenticación"
         )
     return decode_access_token(credentials.credentials)
+
+async def get_current_active_user(
+    claims: Dict[str, Any] = Depends(get_current_user_claims),
+    pool: asyncpg.Pool = Depends(get_db_pool)
+) -> Dict[str, Any]:
+    """
+    Obtiene el usuario actual de la base de datos revalidando su estado activo y rol desde cat_roles.
+    """
+    user_id = claims.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token no contiene identificador de usuario")
+    
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Identificador de usuario inválido")
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT 
+                u.id, 
+                u.username, 
+                u.email, 
+                COALESCE(r.descripcion, 'cartografo') as role,
+                u.id_cat_rol,
+                u.is_active, 
+                u.id_supervisor, 
+                u.created_at, 
+                u.last_login_at
+            FROM users u
+            LEFT JOIN cat_roles r ON u.id_cat_rol = r.id
+            WHERE u.id = $1
+        """, user_uuid)
+
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+
+        if not row["is_active"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="usuario inactivo"
+            )
+
+        return dict(row)
+
+def require_role(allowed_roles: List[str]):
+    """
+    Dependencia de FastAPI para RBAC estricto validado contra cat_roles en la base de datos.
+    """
+    normalized_allowed = {normalize_role(r) for r in allowed_roles}
+    if "admin" in normalized_allowed or "administrador" in normalized_allowed:
+        normalized_allowed.update(ADMIN_ROLES)
+
+    async def role_checker(current_user: Dict[str, Any] = Depends(get_current_active_user)) -> Dict[str, Any]:
+        user_role = normalize_role(str(current_user.get("role", "")))
+        if user_role not in normalized_allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Acceso denegado. Se requiere uno de los siguientes roles: {', '.join(allowed_roles)}"
+            )
+        return current_user
+
+    return role_checker
