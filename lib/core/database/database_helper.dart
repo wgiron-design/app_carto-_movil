@@ -606,4 +606,67 @@ class DatabaseHelper {
     }
     return estructuras;
   }
+
+  /// Reemplaza completamente los registros locales de SQLite con los descargados desde el servidor Postgres
+  Future<void> reemplazarTodoDesdeServidor({
+    required List<PuntoEstructura> estructuras,
+    required List<LineaCamino> caminos,
+    required List<PoligonoUPM> upms,
+  }) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      // 1. Limpiar tablas locales
+      await txn.delete('hogares');
+      await txn.delete('locales');
+      await txn.delete('niveles');
+      await txn.delete('estructuras');
+      await txn.delete('caminos');
+      await txn.delete('upm');
+
+      // 2. Insertar UPMs
+      for (var u in upms) {
+        final map = u.toMapDB();
+        map['sync_dirty'] = 0;
+        await txn.insert('upm', map);
+      }
+
+      // Asegurar default_upm si no existe
+      await txn.execute('''
+        INSERT OR IGNORE INTO upm (id, nombre, updated_at, sync_dirty, sync_version)
+        VALUES ('default_upm', 'UPM por defecto', datetime('now'), 0, 0)
+      ''');
+
+      // 3. Insertar Caminos
+      for (var c in caminos) {
+        final map = c.toMapDB();
+        map['sync_dirty'] = 0;
+        await txn.insert('caminos', map);
+      }
+
+      // 4. Insertar Estructuras y su jerarquía
+      for (var est in estructuras) {
+        final estMap = est.toMapDB('default_upm');
+        estMap['sync_dirty'] = 0;
+        await txn.insert('estructuras', estMap);
+
+        for (var nivel in est.niveles) {
+          final nMap = nivel.toMapDB();
+          nMap['sync_dirty'] = 0;
+          await txn.insert('niveles', nMap);
+
+          for (var local in nivel.locales) {
+            final lMap = local.toMapDB();
+            lMap['sync_dirty'] = 0;
+            await txn.insert('locales', lMap);
+
+            for (var hogar in local.hogares) {
+              final hMap = hogar.toMapDB();
+              hMap['sync_dirty'] = 0;
+              await txn.insert('hogares', hMap);
+            }
+          }
+        }
+      }
+    });
+  }
 }

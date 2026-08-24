@@ -1794,6 +1794,69 @@ class DigitalizacionController extends ChangeNotifier {
     return false;
   }
 
+  /// Sincroniza cambios locales a Postgres y luego reemplaza la base local
+  /// y la memoria con los datos más recientes descargados directamente de Postgres.
+  Future<({bool exito, bool offline, String mensaje})> sincronizarYActualizar({
+    String? userId,
+    String? deviceId,
+  }) async {
+    final service = PostGISService();
+
+    // 1. Probar conectividad
+    final online = await service.probeAndFixBaseUrl();
+    if (!online) {
+      _onlinePostGIS = false;
+      notifyListeners();
+      return (
+        exito: false,
+        offline: true,
+        mensaje: 'Actualmente está en modo offline por lo que no se puede realizar la operación.',
+      );
+    }
+
+    _onlinePostGIS = true;
+
+    // 2. Subir primero todos los cambios pendientes
+    final subidaOk = await sincronizarOfflineBatch(userId: userId, deviceId: deviceId);
+    if (!subidaOk) {
+      return (
+        exito: false,
+        offline: false,
+        mensaje: 'Error subiendo los cambios locales a Postgres.',
+      );
+    }
+
+    // 3. Descargar todos los registros directamente desde Postgres
+    try {
+      final nuevasEstructuras = await service.getEstructuras();
+      final nuevosCaminos = await service.getCaminos();
+      final nuevasUPMs = await service.getUPMs();
+
+      // 4. Reemplazar SQLite local con los datos descargados
+      await DatabaseHelper().reemplazarTodoDesdeServidor(
+        estructuras: nuevasEstructuras,
+        caminos: nuevosCaminos,
+        upms: nuevasUPMs,
+      );
+
+      // 5. Recargar la memoria de la aplicación
+      await cargarDesdeBD();
+
+      return (
+        exito: true,
+        offline: false,
+        mensaje: 'Proyecto sincronizado',
+      );
+    } catch (e) {
+      debugPrint('[DigitalizacionController] Error descargando desde Postgres: $e');
+      return (
+        exito: false,
+        offline: false,
+        mensaje: 'Los datos locales se subieron pero ocurrió un error al actualizar: $e',
+      );
+    }
+  }
+
   /// Verifica cuántos elementos locales NO están en PostGIS.
   /// Compara el conteo local contra el conteo real del servidor.
   /// Retorna:

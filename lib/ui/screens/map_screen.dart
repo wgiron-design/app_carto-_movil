@@ -2258,6 +2258,64 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  Future<void> _ejecutarSincronizarYActualizar(BuildContext context, DigitalizacionController digCtrl) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
+            ),
+            SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                'Sincronizando y actualizando proyecto...',
+                style: TextStyle(color: AppTheme.onSurface, fontSize: 14),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final auth = Provider.of<AuthController>(context, listen: false);
+    final resultado = await digCtrl.sincronizarYActualizar(
+      userId: auth.currentUserId,
+      deviceId: auth.deviceId,
+    );
+
+    if (context.mounted) Navigator.of(context).pop();
+    if (!context.mounted) return;
+
+    if (resultado.offline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('📡 ${resultado.mensaje}'),
+          backgroundColor: const Color(0xFFFF9800),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } else if (resultado.exito) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Proyecto sincronizado'),
+          backgroundColor: AppTheme.success,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('⚠️ ${resultado.mensaje}'),
+          backgroundColor: AppTheme.error,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
   void _salirDeLaApp() {
     if (Platform.isAndroid || Platform.isIOS) {
       SystemNavigator.pop();
@@ -2491,6 +2549,8 @@ class _MapScreenState extends State<MapScreen> {
 
                 const SizedBox(height: 14),
                 _buildBotonSincronizar(context, digCtrl),
+                const SizedBox(height: 8),
+                _buildBotonSincronizarYActualizar(context, digCtrl),
               ],
             ),
           ),
@@ -2523,6 +2583,34 @@ class _MapScreenState extends State<MapScreen> {
           elevation: 2,
         ),
         onPressed: () => _ejecutarSincronizacion(context, digCtrl),
+      ),
+    );
+  }
+
+  Widget _buildBotonSincronizarYActualizar(BuildContext context, DigitalizacionController digCtrl) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        icon: const Icon(Icons.cloud_sync_rounded, size: 18, color: Colors.white),
+        label: const Text(
+          'Sinc & Update',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+            letterSpacing: 0.5,
+          ),
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF1565C0),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          elevation: 2,
+        ),
+        onPressed: () => _ejecutarSincronizarYActualizar(context, digCtrl),
       ),
     );
   }
