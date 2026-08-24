@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'postgis_service.dart';
 import '../models/jerarquia.dart';
+import '../database/database_helper.dart';
 
 class NivelApiException implements Exception {
   final String code;
@@ -97,80 +98,162 @@ class NivelService {
   String get _baseUrl => PostGISService().baseUrl;
 
   Future<NivelListResponse> getNivelesByEstructura(String estructuraId) async {
-    final uri = Uri.parse('$_baseUrl/api/niveles/estructura/$estructuraId');
-    final response = await http.get(uri).timeout(const Duration(seconds: 8));
+    try {
+      final uri = Uri.parse('$_baseUrl/api/niveles/estructura/$estructuraId');
+      final response = await http.get(uri).timeout(const Duration(seconds: 4));
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return NivelListResponse.fromJson(data);
-    } else {
-      _handleError(response);
-      throw NivelApiException(code: 'unknown_error', message: 'Error al consultar niveles');
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return NivelListResponse.fromJson(data);
+      }
+    } catch (_) {}
+
+    // Fallback SQLite local
+    try {
+      final db = await DatabaseHelper().database;
+      final estMaps = await db.query('estructuras', where: 'id = ?', whereArgs: [estructuraId]);
+      final nombreEst = estMaps.isNotEmpty ? (estMaps.first['nombre'] as String? ?? 'Estructura') : 'Estructura';
+      final nivelesCant = estMaps.isNotEmpty ? ((estMaps.first['niveles_cantidad'] as num?)?.toInt() ?? 1) : 1;
+
+      final nivelesMaps = await db.query('niveles', where: 'estructura_id = ? AND deleted_at IS NULL', whereArgs: [estructuraId], orderBy: 'numero ASC');
+      final List<NivelResumen> lista = [];
+
+      for (var n in nivelesMaps) {
+        final nid = n['id'] as String;
+        final localesMaps = await db.query('locales', where: 'nivel_id = ? AND deleted_at IS NULL', whereArgs: [nid]);
+        int localesReg = localesMaps.length;
+        int hogaresReg = 0;
+        int personasReg = 0;
+        for (var loc in localesMaps) {
+          final lid = loc['id'] as String;
+          final hgMaps = await db.query('hogares', where: 'local_id = ? AND deleted_at IS NULL', whereArgs: [lid]);
+          hogaresReg += hgMaps.length;
+          for (var h in hgMaps) {
+            personasReg += (h['total_habitantes'] as num?)?.toInt() ?? 0;
+          }
+        }
+
+        lista.add(NivelResumen(
+          id: nid,
+          numero: (n['numero'] as num).toInt(),
+          numeroLocales: (n['numero_locales'] as num?)?.toInt() ?? 1,
+          descripcion: n['descripcion'] as String?,
+          updatedAt: n['updated_at'] != null ? DateTime.parse(n['updated_at'] as String) : DateTime.now(),
+          localesRegistrados: localesReg,
+          hogaresRegistrados: hogaresReg,
+          personasRegistradas: personasReg,
+        ));
+      }
+
+      return NivelListResponse(
+        estructuraId: estructuraId,
+        nombreEstructura: nombreEst,
+        nivelesCantidad: nivelesCant,
+        nivelesRegistrados: lista.length,
+        niveles: lista,
+      );
+    } catch (e) {
+      throw NivelApiException(code: 'db_error', message: 'Error cargando niveles locales: $e');
     }
   }
 
   Future<Nivel> crearNivel(String estructuraId, {required int numeroLocales, String? descripcion}) async {
-    final uri = Uri.parse('$_baseUrl/api/niveles/estructura/$estructuraId');
-    final body = json.encode({
-      'numero_locales': numeroLocales,
-      if (descripcion != null) 'descripcion': descripcion,
-    });
+    try {
+      final uri = Uri.parse('$_baseUrl/api/niveles/estructura/$estructuraId');
+      final body = json.encode({
+        'numero_locales': numeroLocales,
+        if (descripcion != null) 'descripcion': descripcion,
+      });
 
-    final response = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: body,
-    ).timeout(const Duration(seconds: 8));
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: body,
+      ).timeout(const Duration(seconds: 4));
 
-    if (response.statusCode == 201 || response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return Nivel.fromJson(data);
-    } else {
-      _handleError(response);
-      throw NivelApiException(code: 'unknown_error', message: 'Error al crear nivel');
-    }
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final nivel = Nivel.fromJson(data);
+        await DatabaseHelper().insertEntity('niveles', nivel.toMapDB());
+        return nivel;
+      }
+    } catch (_) {}
+
+    // Fallback SQLite
+    final db = await DatabaseHelper().database;
+    final countMaps = await db.rawQuery('SELECT COUNT(*) as c FROM niveles WHERE estructura_id = ?', [estructuraId]);
+    final nextNum = ((countMaps.first['c'] as num?)?.toInt() ?? 0) + 1;
+    final nuevoNivel = Nivel.nuevo(
+      idEstructura: estructuraId,
+      numeroNivel: nextNum,
+      numeroLocales: numeroLocales,
+      descripcion: descripcion,
+    );
+    await DatabaseHelper().insertEntity('niveles', nuevoNivel.toMapDB());
+    return nuevoNivel;
   }
 
   Future<Nivel> editarNivel(String nivelId, {int? numeroLocales, String? descripcion}) async {
-    final uri = Uri.parse('$_baseUrl/api/niveles/$nivelId');
-    final payload = <String, dynamic>{};
-    if (numeroLocales != null) payload['numero_locales'] = numeroLocales;
-    if (descripcion != null) payload['descripcion'] = descripcion;
+    try {
+      final uri = Uri.parse('$_baseUrl/api/niveles/$nivelId');
+      final payload = <String, dynamic>{};
+      if (numeroLocales != null) payload['numero_locales'] = numeroLocales;
+      if (descripcion != null) payload['descripcion'] = descripcion;
 
-    final response = await http.patch(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(payload),
-    ).timeout(const Duration(seconds: 8));
+      final response = await http.patch(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(payload),
+      ).timeout(const Duration(seconds: 4));
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return Nivel.fromJson(data);
-    } else {
-      _handleError(response);
-      throw NivelApiException(code: 'unknown_error', message: 'Error al editar nivel');
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final nivel = Nivel.fromJson(data);
+        await DatabaseHelper().insertEntity('niveles', nivel.toMapDB());
+        return nivel;
+      }
+    } catch (_) {}
+
+    // Fallback SQLite
+    final db = await DatabaseHelper().database;
+    final row = await db.query('niveles', where: 'id = ?', whereArgs: [nivelId]);
+    if (row.isNotEmpty) {
+      final n = row.first;
+      final updateData = <String, dynamic>{
+        'id': nivelId,
+        'estructura_id': n['estructura_id'],
+        'numero': n['numero'],
+        'numero_locales': numeroLocales ?? n['numero_locales'],
+        'descripcion': descripcion ?? n['descripcion'],
+        'updated_at': DateTime.now().toIso8601String(),
+        'sync_dirty': 1,
+      };
+      await DatabaseHelper().insertEntity('niveles', updateData);
+      return Nivel.fromJson(updateData);
     }
+    throw NivelApiException(code: 'not_found', message: 'Nivel no encontrado localmente');
   }
 
   Future<Nivel> confirmarEliminacionLocales(String nivelId, int numeroLocalesNuevo) async {
-    final uri = Uri.parse('$_baseUrl/api/niveles/$nivelId/locales-excedentes');
-    final body = json.encode({
-      'numero_locales_nuevo': numeroLocalesNuevo,
-    });
+    try {
+      final uri = Uri.parse('$_baseUrl/api/niveles/$nivelId/locales-excedentes');
+      final body = json.encode({
+        'numero_locales_nuevo': numeroLocalesNuevo,
+      });
 
-    final response = await http.delete(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: body,
-    ).timeout(const Duration(seconds: 8));
+      final response = await http.delete(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: body,
+      ).timeout(const Duration(seconds: 4));
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return Nivel.fromJson(data);
-    } else {
-      _handleError(response);
-      throw NivelApiException(code: 'unknown_error', message: 'Error al confirmar eliminación de locales');
-    }
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return Nivel.fromJson(data);
+      }
+    } catch (_) {}
+
+    return await editarNivel(nivelId, numeroLocales: numeroLocalesNuevo);
   }
 
   void _handleError(http.Response response) {

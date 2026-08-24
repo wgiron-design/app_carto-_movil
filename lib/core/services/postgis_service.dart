@@ -143,11 +143,14 @@ class PostGISService {
     }
   }
 
-  /// Envía la sincronización de geometrías offline (Batch Sync)
+  /// Envía la sincronización de geometrías offline y jerarquía (Batch Sync)
   Future<bool> sincronizarOfflineBatch({
     required List<PuntoEstructura> puntos,
     required List<LineaCamino> lineas,
     required List<PoligonoUPM> poligonos,
+    List<Map<String, dynamic>>? niveles,
+    List<Map<String, dynamic>>? locales,
+    List<Map<String, dynamic>>? hogares,
     String? userId,
     String? deviceId,
   }) async {
@@ -156,16 +159,22 @@ class PostGISService {
         'puntos': puntos.map((p) => p.toGeoJson()).toList(),
         'lineas': lineas.map((l) => l.toGeoJson()).toList(),
         'poligonos': poligonos.map((p) => p.toGeoJson()).toList(),
+        'niveles': niveles ?? [],
+        'locales': locales ?? [],
+        'hogares': hogares ?? [],
         if (userId != null) 'user_id': userId,
         if (deviceId != null) 'device_id': deviceId,
       };
+
+      debugPrint('[PostGISService] Enviando batch sync con ${puntos.length} puntos, ${lineas.length} líneas, ${poligonos.length} polígonos, ${(niveles ?? []).length} niveles, ${(locales ?? []).length} locales, ${(hogares ?? []).length} hogares');
 
       final response = await http.post(
         Uri.parse('$baseUrl/api/sync'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode(payload),
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 15));
 
+      debugPrint('[PostGISService] Respuesta batch sync: status=${response.statusCode}');
       return response.statusCode == 200;
     } catch (e) {
       debugPrint('[PostGISService] Error en sincronización por lote: $e');

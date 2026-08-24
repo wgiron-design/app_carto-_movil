@@ -209,6 +209,8 @@ class DigitalizacionController extends ChangeNotifier {
       tipo: original.tipo,
       notas: original.notas,
       fechaCreacion: original.fechaCreacion,
+      updatedAt: DateTime.now(),
+      syncDirty: true,
       createdBy: original.createdBy,
       updatedBy: original.updatedBy,
       deviceId: original.deviceId,
@@ -1029,6 +1031,8 @@ class DigitalizacionController extends ChangeNotifier {
       codigoUPM: original.codigoUPM,
       notas: original.notas,
       fechaCreacion: original.fechaCreacion,
+      updatedAt: DateTime.now(),
+      syncDirty: true,
       createdBy: original.createdBy,
       updatedBy: original.updatedBy,
       deviceId: original.deviceId,
@@ -1182,6 +1186,8 @@ class DigitalizacionController extends ChangeNotifier {
       codigoUPM: codigoUPM,
       notas: original.notas,
       fechaCreacion: original.fechaCreacion,
+      updatedAt: DateTime.now(),
+      syncDirty: true,
       createdBy: original.createdBy,
       updatedBy: original.updatedBy,
       deviceId: original.deviceId,
@@ -1250,6 +1256,8 @@ class DigitalizacionController extends ChangeNotifier {
       tipo: tipo,
       notas: original.notas,
       fechaCreacion: original.fechaCreacion,
+      updatedAt: DateTime.now(),
+      syncDirty: true,
       createdBy: original.createdBy,
       updatedBy: original.updatedBy,
       deviceId: original.deviceId,
@@ -1277,6 +1285,8 @@ class DigitalizacionController extends ChangeNotifier {
       tipo: original.tipo,
       notas: original.notas,
       fechaCreacion: original.fechaCreacion,
+      updatedAt: DateTime.now(),
+      syncDirty: true,
       createdBy: original.createdBy,
       updatedBy: original.updatedBy,
       deviceId: original.deviceId,
@@ -1327,6 +1337,8 @@ class DigitalizacionController extends ChangeNotifier {
         tipo: original.tipo,
         notas: original.notas,
         fechaCreacion: original.fechaCreacion,
+        updatedAt: DateTime.now(),
+        syncDirty: true,
         createdBy: original.createdBy,
         updatedBy: original.updatedBy,
         deviceId: original.deviceId,
@@ -1652,40 +1664,26 @@ class DigitalizacionController extends ChangeNotifier {
         'poligonos': poligonos.map((p) => p.toJson()).toList(),
       };
 
-  /// Carga inteligente desde PostGIS con fallback a SQLite local
+  /// Carga offline-first: siempre lee primero de SQLite local (fuente de verdad local).
+  /// Si hay conexión con PostGIS, actualiza el estado online y la lista de capas activas.
   Future<void> cargarDesdePostGIS() async {
     _cargandoPostGIS = true;
     notifyListeners();
 
     try {
+      // 1. Cargar SIEMPRE primero desde la base de datos local SQLite
+      await cargarDesdeBD();
+
+      // 2. Verificar conexión con el backend y obtener capas activas si está disponible
       final service = PostGISService();
       final activas = await service.getCapasActivas();
       if (activas.isNotEmpty) {
         _capasRegistro = activas;
         _onlinePostGIS = true;
       }
-
-      final estructurasRemote = await service.getEstructuras();
-      final caminosRemote = await service.getCaminos();
-      final upmsRemote = await service.getUPMs();
-
-      if (estructurasRemote.isNotEmpty || caminosRemote.isNotEmpty || upmsRemote.isNotEmpty) {
-        _onlinePostGIS = true;
-        puntos.clear();
-        puntos.addAll(estructurasRemote);
-
-        lineas.clear();
-        lineas.addAll(caminosRemote);
-
-        poligonos.clear();
-        poligonos.addAll(upmsRemote);
-      } else {
-        await cargarDesdeBD();
-      }
     } catch (e) {
-      debugPrint('[DigitalizacionController] Falló PostGIS, cargando de SQLite: $e');
+      debugPrint('[DigitalizacionController] Sin conexión a PostGIS o error: $e');
       _onlinePostGIS = false;
-      await cargarDesdeBD();
     } finally {
       _cargandoPostGIS = false;
       notifyListeners();
@@ -1694,11 +1692,74 @@ class DigitalizacionController extends ChangeNotifier {
 
   Future<bool> sincronizarOfflineBatch({String? userId, String? deviceId}) async {
     final service = PostGISService();
+    final db = await DatabaseHelper().database;
+
+    // 1. Filtrar geometrías marcadas con syncDirty
     final dirtyPuntos = puntos.where((p) => p.syncDirty).toList();
     final dirtyLineas = lineas.where((l) => l.syncDirty).toList();
-    final dirtyPoligonos = poligonos.where((p) => p.syncDirty).toList();
+    final dirtyPoligonos = poligonos.where((p) => p.syncDirty && p.id != 'default_upm').toList();
 
-    if (dirtyPuntos.isEmpty && dirtyLineas.isEmpty && dirtyPoligonos.isEmpty) {
+    // 2. Leer niveles, locales y hogares con sync_dirty = 1 desde SQLite
+    List<Map<String, dynamic>> nivelesMaps = [];
+    List<Map<String, dynamic>> localesMaps = [];
+    List<Map<String, dynamic>> hogaresMaps = [];
+
+    try {
+      final rawNiveles = await db.query('niveles', where: 'sync_dirty = 1');
+      final rawLocales = await db.query('locales', where: 'sync_dirty = 1');
+      final rawHogares = await db.query('hogares', where: 'sync_dirty = 1');
+
+      nivelesMaps = rawNiveles.map((n) => {
+        'id': n['id'] as String,
+        'estructura_id': n['estructura_id'] as String,
+        'numero': (n['numero'] as num).toInt(),
+        'numero_locales': (n['numero_locales'] as num?)?.toInt() ?? 1,
+        'updated_at': n['updated_at'] as String?,
+      }).toList();
+
+      localesMaps = rawLocales.map((l) => {
+        'id': l['id'] as String,
+        'nivel_id': l['nivel_id'] as String,
+        'nombre_local': (l['nombre'] ?? l['nombre_local']) as String?,
+        'id_tipo': (l['id_tipo'] as num?)?.toInt() ?? 1,
+        'id_condicion_local': l['id_condicion_local'] != null ? (l['id_condicion_local'] as num).toInt() : null,
+        'numero_hogares': l['numero_hogares'] != null ? (l['numero_hogares'] as num).toInt() : null,
+        'descripcion': l['descripcion'] as String?,
+        'updated_at': l['updated_at'] as String?,
+      }).toList();
+
+      hogaresMaps = rawHogares.map((h) => {
+        'id': h['id'] as String,
+        'local_id': h['local_id'] as String,
+        'jefe_familia': h['jefe_familia'] as String? ?? '',
+        'id_sexo': h['id_sexo'] != null ? (h['id_sexo'] as num).toInt() : null,
+        'id_idioma': h['id_idioma'] != null ? (h['id_idioma'] as num).toInt() : null,
+        'direccion': h['direccion'] as String?,
+        'total_habitantes': (h['total_habitantes'] as num?)?.toInt() ?? 0,
+        'personas_0_5': (h['personas_0_5'] as num?)?.toInt() ?? 0,
+        'personas_6_11': (h['personas_6_11'] as num?)?.toInt() ?? 0,
+        'personas_12_17': (h['personas_12_17'] as num?)?.toInt() ?? 0,
+        'personas_18_23': (h['personas_18_23'] as num?)?.toInt() ?? 0,
+        'personas_24_34': (h['personas_24_34'] as num?)?.toInt() ?? 0,
+        'personas_35_44': (h['personas_35_44'] as num?)?.toInt() ?? 0,
+        'personas_45_59': (h['personas_45_59'] as num?)?.toInt() ?? 0,
+        'personas_60_69': (h['personas_60_69'] as num?)?.toInt() ?? 0,
+        'personas_70_79': (h['personas_70_79'] as num?)?.toInt() ?? 0,
+        'personas_80_mas': (h['personas_80_mas'] as num?)?.toInt() ?? 0,
+        'personas_no_edad': (h['personas_no_edad'] as num?)?.toInt() ?? 0,
+        'updated_at': h['updated_at'] as String?,
+      }).toList();
+    } catch (e) {
+      debugPrint('[DigitalizacionController] Error consultando jerarquía dirty en SQLite: $e');
+    }
+
+    if (dirtyPuntos.isEmpty &&
+        dirtyLineas.isEmpty &&
+        dirtyPoligonos.isEmpty &&
+        nivelesMaps.isEmpty &&
+        localesMaps.isEmpty &&
+        hogaresMaps.isEmpty) {
+      debugPrint('[DigitalizacionController] Nada pendiente por sincronizar');
       return true;
     }
 
@@ -1706,6 +1767,9 @@ class DigitalizacionController extends ChangeNotifier {
       puntos: dirtyPuntos,
       lineas: dirtyLineas,
       poligonos: dirtyPoligonos,
+      niveles: nivelesMaps,
+      locales: localesMaps,
+      hogares: hogaresMaps,
       userId: userId,
       deviceId: deviceId,
     );
@@ -1713,14 +1777,18 @@ class DigitalizacionController extends ChangeNotifier {
     if (ok) {
       _onlinePostGIS = true;
       try {
-        final db = await DatabaseHelper().database;
-        await db.rawUpdate('UPDATE estructuras SET sync_dirty = 0 WHERE sync_dirty = 1');
-        await db.rawUpdate('UPDATE caminos SET sync_dirty = 0 WHERE sync_dirty = 1');
-        await db.rawUpdate('UPDATE upm SET sync_dirty = 0 WHERE sync_dirty = 1');
+        await db.transaction((txn) async {
+          await txn.rawUpdate('UPDATE estructuras SET sync_dirty = 0 WHERE sync_dirty = 1');
+          await txn.rawUpdate('UPDATE caminos SET sync_dirty = 0 WHERE sync_dirty = 1');
+          await txn.rawUpdate('UPDATE upm SET sync_dirty = 0 WHERE sync_dirty = 1');
+          await txn.rawUpdate('UPDATE niveles SET sync_dirty = 0 WHERE sync_dirty = 1');
+          await txn.rawUpdate('UPDATE locales SET sync_dirty = 0 WHERE sync_dirty = 1');
+          await txn.rawUpdate('UPDATE hogares SET sync_dirty = 0 WHERE sync_dirty = 1');
+        });
       } catch (e) {
         debugPrint('[DigitalizacionController] Error actualizando sync_dirty en SQLite: $e');
       }
-      await cargarDesdePostGIS();
+      await cargarDesdeBD();
       return true;
     }
     return false;
@@ -1750,8 +1818,6 @@ class DigitalizacionController extends ChangeNotifier {
   }
 
   Future<void> cargarDesdeBD() async {
-
-
     final dbHelper = DatabaseHelper();
     final polyRegex = RegExp(r'POLYGON\s*\(\((.*?)\)\)', caseSensitive: false);
     final lineRegex = RegExp(r'LINESTRING\s*\((.*?)\)', caseSensitive: false);
@@ -1761,7 +1827,8 @@ class DigitalizacionController extends ChangeNotifier {
     poligonos.clear();
     for (var u in upmsData) {
       try {
-        final geomStr = u['geom_wkt'] as String;
+        final geomStr = u['geom_wkt'] as String?;
+        if (geomStr == null) continue;
         final match = polyRegex.firstMatch(geomStr);
         if (match != null) {
           final ptsStr = match.group(1)!;
@@ -1777,8 +1844,10 @@ class DigitalizacionController extends ChangeNotifier {
             poligonos.add(PoligonoUPM(
               id: u['id'] as String,
               vertices: verts,
-              nombre: 'UPM',
-              updatedAt: DateTime.parse(u['updated_at'] as String),
+              nombre: (u['nombre'] as String?)?.isNotEmpty == true ? u['nombre'] as String : 'UPM',
+              codigoUPM: u['codigo_upm'] as String? ?? '',
+              notas: u['notas'] as String? ?? '',
+              updatedAt: u['updated_at'] != null ? DateTime.parse(u['updated_at'] as String) : DateTime.now(),
               syncDirty: u['sync_dirty'] == 1,
               createdBy: u['created_by'] as String?,
               updatedBy: u['updated_by'] as String?,
@@ -1797,7 +1866,8 @@ class DigitalizacionController extends ChangeNotifier {
     lineas.clear();
     for (var c in caminosData) {
       try {
-        final geomStr = c['geom_wkt'] as String;
+        final geomStr = c['geom_wkt'] as String?;
+        if (geomStr == null) continue;
         final match = lineRegex.firstMatch(geomStr);
         if (match != null) {
           final ptsStr = match.group(1)!;
@@ -1813,8 +1883,13 @@ class DigitalizacionController extends ChangeNotifier {
             lineas.add(LineaCamino(
               id: c['id'] as String,
               vertices: verts,
-              nombre: 'Camino',
-              updatedAt: DateTime.parse(c['updated_at'] as String),
+              nombre: (c['nombre'] as String?)?.isNotEmpty == true ? c['nombre'] as String : 'Camino',
+              tipo: TipoCamino.values.firstWhere(
+                (e) => e.name == c['tipo'],
+                orElse: () => TipoCamino.terraceria,
+              ),
+              notas: c['notas'] as String? ?? '',
+              updatedAt: c['updated_at'] != null ? DateTime.parse(c['updated_at'] as String) : DateTime.now(),
               syncDirty: c['sync_dirty'] == 1,
               createdBy: c['created_by'] as String?,
               updatedBy: c['updated_by'] as String?,

@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'postgis_service.dart';
 import '../models/capa_geometrica.dart';
 import '../models/jerarquia.dart';
+import '../database/database_helper.dart';
 
 class LocalApiException implements Exception {
   final String code;
@@ -118,41 +119,91 @@ class LocalService {
   String get _baseUrl => PostGISService().baseUrl;
 
   Future<List<CatalogoItem>> getTiposLocales() async {
-    final uri = Uri.parse('$_baseUrl/api/capas/catalogos/locales/tipos');
-    final response = await http.get(uri).timeout(const Duration(seconds: 8));
+    try {
+      final uri = Uri.parse('$_baseUrl/api/capas/catalogos/locales/tipos');
+      final response = await http.get(uri).timeout(const Duration(seconds: 4));
 
-    if (response.statusCode == 200) {
-      final List list = json.decode(response.body);
-      return list.map((item) => CatalogoItem.fromJson(item as Map<String, dynamic>)).toList();
-    } else {
-      _handleError(response);
-      throw LocalApiException(code: 'unknown_error', message: 'Error al consultar tipos de locales');
-    }
+      if (response.statusCode == 200) {
+        final List list = json.decode(response.body);
+        return list.map((item) => CatalogoItem.fromJson(item as Map<String, dynamic>)).toList();
+      }
+    } catch (_) {}
+
+    return const [
+      CatalogoItem(id: 1, nombre: 'Habitación / Vivienda'),
+      CatalogoItem(id: 2, nombre: 'Comercio / Tienda'),
+      CatalogoItem(id: 3, nombre: 'Oficina / Servicio'),
+      CatalogoItem(id: 4, nombre: 'Institución pública/privada'),
+      CatalogoItem(id: 5, nombre: 'En construcción'),
+      CatalogoItem(id: 6, nombre: 'Otro'),
+    ];
   }
 
   Future<List<CatalogoItem>> getCondicionesLocales() async {
-    final uri = Uri.parse('$_baseUrl/api/capas/catalogos/locales/condiciones');
-    final response = await http.get(uri).timeout(const Duration(seconds: 8));
+    try {
+      final uri = Uri.parse('$_baseUrl/api/capas/catalogos/locales/condiciones');
+      final response = await http.get(uri).timeout(const Duration(seconds: 4));
 
-    if (response.statusCode == 200) {
-      final List list = json.decode(response.body);
-      return list.map((item) => CatalogoItem.fromJson(item as Map<String, dynamic>)).toList();
-    } else {
-      _handleError(response);
-      throw LocalApiException(code: 'unknown_error', message: 'Error al consultar condiciones de locales');
-    }
+      if (response.statusCode == 200) {
+        final List list = json.decode(response.body);
+        return list.map((item) => CatalogoItem.fromJson(item as Map<String, dynamic>)).toList();
+      }
+    } catch (_) {}
+
+    return const [
+      CatalogoItem(id: 1, nombre: 'Ocupado'),
+      CatalogoItem(id: 2, nombre: 'Uso temporal'),
+      CatalogoItem(id: 3, nombre: 'Desocupado'),
+      CatalogoItem(id: 4, nombre: 'Rechazo / Ausente'),
+    ];
   }
 
   Future<LocalListResponse> getLocalesByNivel(String nivelId) async {
-    final uri = Uri.parse('$_baseUrl/api/locales/nivel/$nivelId');
-    final response = await http.get(uri).timeout(const Duration(seconds: 8));
+    try {
+      final uri = Uri.parse('$_baseUrl/api/locales/nivel/$nivelId');
+      final response = await http.get(uri).timeout(const Duration(seconds: 4));
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return LocalListResponse.fromJson(data);
-    } else {
-      _handleError(response);
-      throw LocalApiException(code: 'unknown_error', message: 'Error al consultar locales');
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return LocalListResponse.fromJson(data);
+      }
+    } catch (_) {}
+
+    // Fallback SQLite local
+    try {
+      final db = await DatabaseHelper().database;
+      final nivMaps = await db.query('niveles', where: 'id = ?', whereArgs: [nivelId]);
+      final numNivel = nivMaps.isNotEmpty ? ((nivMaps.first['numero'] as num?)?.toInt() ?? 1) : 1;
+      final numEsp = nivMaps.isNotEmpty ? ((nivMaps.first['numero_locales'] as num?)?.toInt() ?? 1) : 1;
+
+      final localesMaps = await db.query('locales', where: 'nivel_id = ? AND deleted_at IS NULL', whereArgs: [nivelId]);
+      final List<LocalResumen> lista = [];
+
+      for (var l in localesMaps) {
+        final lid = l['id'] as String;
+        final hgMaps = await db.query('hogares', where: 'local_id = ? AND deleted_at IS NULL', whereArgs: [lid]);
+        lista.add(LocalResumen(
+          id: lid,
+          nivelId: nivelId,
+          nombreLocal: (l['nombre_local'] ?? l['nombre']) as String?,
+          idTipo: (l['id_tipo'] as num?)?.toInt() ?? 1,
+          idCondicionLocal: l['id_condicion_local'] != null ? (l['id_condicion_local'] as num).toInt() : null,
+          numeroHogares: l['numero_hogares'] != null ? (l['numero_hogares'] as num).toInt() : null,
+          descripcion: l['descripcion'] as String?,
+          updatedAt: l['updated_at'] != null ? DateTime.parse(l['updated_at'] as String) : null,
+          hogaresRegistrados: hgMaps.length,
+        ));
+      }
+
+      return LocalListResponse(
+        nivelId: nivelId,
+        numeroNivel: numNivel,
+        numeroLocalesEsperados: numEsp,
+        localesRegistrados: lista.length,
+        locales: lista,
+      );
+    } catch (e) {
+      throw LocalApiException(code: 'db_error', message: 'Error cargando locales locales: $e');
     }
   }
 
@@ -164,28 +215,41 @@ class LocalService {
     int? numeroHogares,
     String? descripcion,
   }) async {
-    final uri = Uri.parse('$_baseUrl/api/locales/nivel/$nivelId');
-    final body = json.encode({
-      'id_tipo': idTipo,
-      if (idCondicionLocal != null) 'id_condicion_local': idCondicionLocal,
-      if (nombreLocal != null && nombreLocal.isNotEmpty) 'nombre_local': nombreLocal,
-      if (numeroHogares != null) 'numero_hogares': numeroHogares,
-      if (descripcion != null && descripcion.isNotEmpty) 'descripcion': descripcion,
-    });
+    try {
+      final uri = Uri.parse('$_baseUrl/api/locales/nivel/$nivelId');
+      final body = json.encode({
+        'id_tipo': idTipo,
+        if (idCondicionLocal != null) 'id_condicion_local': idCondicionLocal,
+        if (nombreLocal != null && nombreLocal.isNotEmpty) 'nombre_local': nombreLocal,
+        if (numeroHogares != null) 'numero_hogares': numeroHogares,
+        if (descripcion != null && descripcion.isNotEmpty) 'descripcion': descripcion,
+      });
 
-    final response = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: body,
-    ).timeout(const Duration(seconds: 8));
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: body,
+      ).timeout(const Duration(seconds: 4));
 
-    if (response.statusCode == 201 || response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return Local.fromJson(data);
-    } else {
-      _handleError(response);
-      throw LocalApiException(code: 'unknown_error', message: 'Error al crear local');
-    }
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final loc = Local.fromJson(data);
+        await DatabaseHelper().insertEntity('locales', loc.toMapDB());
+        return loc;
+      }
+    } catch (_) {}
+
+    // Fallback SQLite
+    final nuevoLocal = Local.nuevo(
+      idNivel: nivelId,
+      idTipo: idTipo,
+      idCondicionLocal: idCondicionLocal,
+      nombre: nombreLocal,
+      numeroHogares: numeroHogares,
+      descripcion: descripcion,
+    );
+    await DatabaseHelper().insertEntity('locales', nuevoLocal.toMapDB());
+    return nuevoLocal;
   }
 
   Future<Local> editarLocal(
@@ -196,37 +260,58 @@ class LocalService {
     int? numeroHogares,
     String? descripcion,
   }) async {
-    final uri = Uri.parse('$_baseUrl/api/locales/$localId');
-    final payload = <String, dynamic>{};
-    if (idTipo != null) payload['id_tipo'] = idTipo;
-    if (idCondicionLocal != null) payload['id_condicion_local'] = idCondicionLocal;
-    if (nombreLocal != null) payload['nombre_local'] = nombreLocal;
-    if (numeroHogares != null) payload['numero_hogares'] = numeroHogares;
-    if (descripcion != null) payload['descripcion'] = descripcion;
+    try {
+      final uri = Uri.parse('$_baseUrl/api/locales/$localId');
+      final payload = <String, dynamic>{};
+      if (idTipo != null) payload['id_tipo'] = idTipo;
+      if (idCondicionLocal != null) payload['id_condicion_local'] = idCondicionLocal;
+      if (nombreLocal != null) payload['nombre_local'] = nombreLocal;
+      if (numeroHogares != null) payload['numero_hogares'] = numeroHogares;
+      if (descripcion != null) payload['descripcion'] = descripcion;
 
-    final response = await http.patch(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode(payload),
-    ).timeout(const Duration(seconds: 8));
+      final response = await http.patch(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(payload),
+      ).timeout(const Duration(seconds: 4));
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return Local.fromJson(data);
-    } else {
-      _handleError(response);
-      throw LocalApiException(code: 'unknown_error', message: 'Error al editar local');
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final loc = Local.fromJson(data);
+        await DatabaseHelper().insertEntity('locales', loc.toMapDB());
+        return loc;
+      }
+    } catch (_) {}
+
+    // Fallback SQLite
+    final db = await DatabaseHelper().database;
+    final row = await db.query('locales', where: 'id = ?', whereArgs: [localId]);
+    if (row.isNotEmpty) {
+      final l = row.first;
+      final updateData = <String, dynamic>{
+        'id': localId,
+        'nivel_id': l['nivel_id'],
+        'nombre_local': nombreLocal ?? (l['nombre_local'] ?? l['nombre']),
+        'id_tipo': idTipo ?? l['id_tipo'],
+        'id_condicion_local': idCondicionLocal ?? l['id_condicion_local'],
+        'numero_hogares': numeroHogares ?? l['numero_hogares'],
+        'descripcion': descripcion ?? l['descripcion'],
+        'updated_at': DateTime.now().toIso8601String(),
+        'sync_dirty': 1,
+      };
+      await DatabaseHelper().insertEntity('locales', updateData);
+      return Local.fromJson(updateData);
     }
+    throw LocalApiException(code: 'not_found', message: 'Local no encontrado localmente');
   }
 
   Future<void> eliminarLocal(String localId) async {
-    final uri = Uri.parse('$_baseUrl/api/locales/$localId');
-    final response = await http.delete(uri).timeout(const Duration(seconds: 8));
+    try {
+      final uri = Uri.parse('$_baseUrl/api/locales/$localId');
+      await http.delete(uri).timeout(const Duration(seconds: 4));
+    } catch (_) {}
 
-    if (response.statusCode != 200) {
-      _handleError(response);
-      throw LocalApiException(code: 'unknown_error', message: 'Error al eliminar local');
-    }
+    await DatabaseHelper().softDeleteEntity('locales', localId);
   }
 
   void _handleError(http.Response response) {

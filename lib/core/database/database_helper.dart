@@ -41,7 +41,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       dbPath,
-      version: 7,
+      version: 8,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onConfigure: _onConfigure,
@@ -183,6 +183,18 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE $table ADD COLUMN deleted_at TEXT');
       }
     }
+    if (oldVersion < 8) {
+      for (final col in ['nombre', 'codigo_upm', 'notas']) {
+        try {
+          await db.execute('ALTER TABLE upm ADD COLUMN $col TEXT');
+        } catch (_) {}
+      }
+      for (final col in ['nombre', 'tipo', 'notas']) {
+        try {
+          await db.execute('ALTER TABLE caminos ADD COLUMN $col TEXT');
+        } catch (_) {}
+      }
+    }
   }
 
   Future<void> _onConfigure(Database db) async {
@@ -194,6 +206,9 @@ class DatabaseHelper {
       CREATE TABLE upm (
         id TEXT PRIMARY KEY,
         geom_wkt TEXT,
+        nombre TEXT,
+        codigo_upm TEXT,
+        notas TEXT,
         min_x REAL,
         max_x REAL,
         min_y REAL,
@@ -220,6 +235,9 @@ class DatabaseHelper {
       CREATE TABLE caminos (
         id TEXT PRIMARY KEY,
         geom_wkt TEXT,
+        nombre TEXT,
+        tipo TEXT,
+        notas TEXT,
         min_x REAL,
         max_x REAL,
         min_y REAL,

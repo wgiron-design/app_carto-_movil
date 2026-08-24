@@ -425,6 +425,9 @@ class LineaCamino {
     return {
       'id': id,
       'geom_wkt': geomWkt,
+      'nombre': nombre,
+      'tipo': tipo.name,
+      'notas': notas,
       'min_x': b['min_x'],
       'max_x': b['max_x'],
       'min_y': b['min_y'],
@@ -636,6 +639,9 @@ class PoligonoUPM {
     return {
       'id': id,
       'geom_wkt': geomWkt,
+      'nombre': nombre,
+      'codigo_upm': codigoUPM,
+      'notas': notas,
       'min_x': b['min_x'],
       'max_x': b['max_x'],
       'min_y': b['min_y'],
