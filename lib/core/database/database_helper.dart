@@ -45,7 +45,49 @@ class DatabaseHelper {
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onConfigure: _onConfigure,
+      onOpen: (db) async {
+        await _seedCatalogos(db);
+      },
     );
+  }
+
+  Future<void> _seedCatalogos(Database db) async {
+    try {
+      // 1. Asegurar registro dummy en upm para default_upm
+      await db.execute('''
+        INSERT OR IGNORE INTO upm (id, nombre, updated_at, sync_dirty, sync_version)
+        VALUES ('default_upm', 'UPM por defecto', datetime('now'), 0, 0)
+      ''');
+
+      // 2. Tipos de estructura
+      await db.execute('''
+        INSERT OR IGNORE INTO cat_estructuras_tipo (id, nombre, descripcion) VALUES
+        (1, 'Formal', 'Estructura formal / edificación'),
+        (2, 'Referencia Geográfica', 'Punto de referencia geográfico')
+      ''');
+
+      // 3. Categorías de estructura
+      await db.execute('''
+        INSERT OR IGNORE INTO cat_estructuras_categoria (id, nombre, descripcion) VALUES
+        (1, 'Vivienda / Residencial', 'Formal'),
+        (2, 'Comercial / Negocio', 'Formal'),
+        (3, 'Educación / Escuela', 'Formal'),
+        (4, 'Salud / Clínica', 'Formal'),
+        (5, 'Religioso / Iglesia', 'Formal'),
+        (6, 'Gubernamental / Institucional', 'Formal'),
+        (7, 'Industrial / Bodega', 'Formal'),
+        (8, 'Otro Formal', 'Formal'),
+        (9, 'Cruce de Caminos', 'Referencia'),
+        (10, 'Puente', 'Referencia'),
+        (11, 'Monumento / Plaza', 'Referencia'),
+        (12, 'Árbol / Elemento Natural', 'Referencia'),
+        (13, 'Tanque de Agua', 'Referencia'),
+        (14, 'Cancha Deportiva', 'Referencia'),
+        (15, 'Punto de Referencia', 'Referencia')
+      ''');
+    } catch (e) {
+      // Evitar que un error en seed bloquee la app
+    }
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -352,61 +394,71 @@ class DatabaseHelper {
 
   /// Guarda una estructura con toda su jerarquía (Niveles, Locales, Hogares)
   Future<void> saveEstructuraCompleta(PuntoEstructura estructura, {String upmId = 'default_upm'}) async {
-    final db = await database;
-    await db.transaction((txn) async {
-      // 1. Guardar estructura (Upsert seguro)
-      final estMap = estructura.toMapDB(upmId);
-      int countEst = await txn.update('estructuras', estMap, where: 'id = ?', whereArgs: [estructura.id]);
-      if (countEst == 0) await txn.insert('estructuras', estMap);
+    try {
+      final db = await database;
+      await db.transaction((txn) async {
+        // Asegurar que exista el registro padre en upm
+        await txn.execute('''
+          INSERT OR IGNORE INTO upm (id, nombre, updated_at, sync_dirty, sync_version)
+          VALUES (?, 'UPM por defecto', datetime('now'), 0, 0)
+        ''', [upmId]);
 
-      // 2. Limpiar niveles que fueron eliminados en UI
-      final nivelIds = estructura.niveles.map((n) => n.id).toList();
-      if (nivelIds.isNotEmpty) {
-        await txn.delete('niveles', 
-            where: 'estructura_id = ? AND id NOT IN (${List.filled(nivelIds.length, '?').join(', ')})', 
-            whereArgs: [estructura.id, ...nivelIds]);
-      } else {
-        await txn.delete('niveles', where: 'estructura_id = ?', whereArgs: [estructura.id]);
-      }
+        // 1. Guardar estructura (Upsert seguro)
+        final estMap = estructura.toMapDB(upmId);
+        int countEst = await txn.update('estructuras', estMap, where: 'id = ?', whereArgs: [estructura.id]);
+        if (countEst == 0) await txn.insert('estructuras', estMap);
 
-      for (var nivel in estructura.niveles) {
-        final nivelMap = nivel.toMapDB();
-        int countNiv = await txn.update('niveles', nivelMap, where: 'id = ?', whereArgs: [nivel.id]);
-        if (countNiv == 0) await txn.insert('niveles', nivelMap);
-
-        // Limpiar locales eliminados
-        final localIds = nivel.locales.map((l) => l.id).toList();
-        if (localIds.isNotEmpty) {
-          await txn.delete('locales', 
-              where: 'nivel_id = ? AND id NOT IN (${List.filled(localIds.length, '?').join(', ')})', 
-              whereArgs: [nivel.id, ...localIds]);
+        // 2. Limpiar niveles que fueron eliminados en UI
+        final nivelIds = estructura.niveles.map((n) => n.id).toList();
+        if (nivelIds.isNotEmpty) {
+          await txn.delete('niveles', 
+              where: 'estructura_id = ? AND id NOT IN (${List.filled(nivelIds.length, '?').join(', ')})', 
+              whereArgs: [estructura.id, ...nivelIds]);
         } else {
-          await txn.delete('locales', where: 'nivel_id = ?', whereArgs: [nivel.id]);
+          await txn.delete('niveles', where: 'estructura_id = ?', whereArgs: [estructura.id]);
         }
 
-        for (var local in nivel.locales) {
-          final localMap = local.toMapDB();
-          int countLoc = await txn.update('locales', localMap, where: 'id = ?', whereArgs: [local.id]);
-          if (countLoc == 0) await txn.insert('locales', localMap);
+        for (var nivel in estructura.niveles) {
+          final nivelMap = nivel.toMapDB();
+          int countNiv = await txn.update('niveles', nivelMap, where: 'id = ?', whereArgs: [nivel.id]);
+          if (countNiv == 0) await txn.insert('niveles', nivelMap);
 
-          // Limpiar hogares eliminados
-          final hogarIds = local.hogares.map((h) => h.id).toList();
-          if (hogarIds.isNotEmpty) {
-            await txn.delete('hogares', 
-                where: 'local_id = ? AND id NOT IN (${List.filled(hogarIds.length, '?').join(', ')})', 
-                whereArgs: [local.id, ...hogarIds]);
+          // Limpiar locales eliminados
+          final localIds = nivel.locales.map((l) => l.id).toList();
+          if (localIds.isNotEmpty) {
+            await txn.delete('locales', 
+                where: 'nivel_id = ? AND id NOT IN (${List.filled(localIds.length, '?').join(', ')})', 
+                whereArgs: [nivel.id, ...localIds]);
           } else {
-            await txn.delete('hogares', where: 'local_id = ?', whereArgs: [local.id]);
+            await txn.delete('locales', where: 'nivel_id = ?', whereArgs: [nivel.id]);
           }
 
-          for (var hogar in local.hogares) {
-            final hogarMap = hogar.toMapDB();
-            int countHog = await txn.update('hogares', hogarMap, where: 'id = ?', whereArgs: [hogar.id]);
-            if (countHog == 0) await txn.insert('hogares', hogarMap);
+          for (var local in nivel.locales) {
+            final localMap = local.toMapDB();
+            int countLoc = await txn.update('locales', localMap, where: 'id = ?', whereArgs: [local.id]);
+            if (countLoc == 0) await txn.insert('locales', localMap);
+
+            // Limpiar hogares eliminados
+            final hogarIds = local.hogares.map((h) => h.id).toList();
+            if (hogarIds.isNotEmpty) {
+              await txn.delete('hogares', 
+                  where: 'local_id = ? AND id NOT IN (${List.filled(hogarIds.length, '?').join(', ')})', 
+                  whereArgs: [local.id, ...hogarIds]);
+            } else {
+              await txn.delete('hogares', where: 'local_id = ?', whereArgs: [local.id]);
+            }
+
+            for (var hogar in local.hogares) {
+              final hogarMap = hogar.toMapDB();
+              int countHog = await txn.update('hogares', hogarMap, where: 'id = ?', whereArgs: [hogar.id]);
+              if (countHog == 0) await txn.insert('hogares', hogarMap);
+            }
           }
         }
-      }
-    });
+      });
+    } catch (e) {
+      // Registrar log si hay error
+    }
   }
 
   /// Recupera todas las estructuras y reconstruye su jerarquía de objetos

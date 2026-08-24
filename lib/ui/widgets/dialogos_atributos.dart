@@ -18,6 +18,33 @@ typedef AtributosPuntoResult = ({
   String notas,
 });
 
+const List<CatalogoItem> kTiposEstructuraDefault = [
+  CatalogoItem(id: 1, nombre: 'Formal', descripcion: 'Estructura formal / edificación'),
+  CatalogoItem(id: 2, nombre: 'Referencia Geográfica', descripcion: 'Punto de referencia geográfico'),
+];
+
+const Map<int, List<CatalogoItem>> kCategoriasEstructuraDefault = {
+  1: [
+    CatalogoItem(id: 1, nombre: 'Vivienda / Residencial', idCategoria: 1),
+    CatalogoItem(id: 2, nombre: 'Comercial / Negocio', idCategoria: 1),
+    CatalogoItem(id: 3, nombre: 'Educación / Escuela', idCategoria: 1),
+    CatalogoItem(id: 4, nombre: 'Salud / Clínica', idCategoria: 1),
+    CatalogoItem(id: 5, nombre: 'Religioso / Iglesia', idCategoria: 1),
+    CatalogoItem(id: 6, nombre: 'Gubernamental / Institucional', idCategoria: 1),
+    CatalogoItem(id: 7, nombre: 'Industrial / Bodega', idCategoria: 1),
+    CatalogoItem(id: 8, nombre: 'Otro Formal', idCategoria: 1),
+  ],
+  2: [
+    CatalogoItem(id: 9, nombre: 'Cruce de Caminos', idCategoria: 2),
+    CatalogoItem(id: 10, nombre: 'Puente', idCategoria: 2),
+    CatalogoItem(id: 11, nombre: 'Monumento / Plaza', idCategoria: 2),
+    CatalogoItem(id: 12, nombre: 'Árbol / Elemento Natural', idCategoria: 2),
+    CatalogoItem(id: 13, nombre: 'Tanque de Agua', idCategoria: 2),
+    CatalogoItem(id: 14, nombre: 'Cancha Deportiva', idCategoria: 2),
+    CatalogoItem(id: 15, nombre: 'Punto de Referencia', idCategoria: 2),
+  ],
+};
+
 typedef AtributosLineaResult = ({
   String nombre,
   TipoCamino tipo,
@@ -35,15 +62,6 @@ typedef AtributosPoligonoResult = ({
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Formulario de atributos para un nuevo punto (Estructura) o para editar uno existente.
-///
-/// Flujo del combo dependiente:
-///   1. El usuario selecciona un **tipo** (Formal / Referencia).
-///   2. El widget llama al backend [GET /api/capas/catalogos/estructuras/categorias?tipo={id}]
-///      y puebla el combo de **categoría** con la respuesta.
-///   3. Si el tipo cambia, la categoría se resetea (null) y se repuebla.
-///
-/// Modo edición: al abrir con [idTipoInicial] e [idCategoriaInicial], primero carga
-/// las categorías del tipo guardado, después preselecciona la categoría actual.
 class DialogoAtributosPunto extends StatefulWidget {
   final double lat;
   final double lng;
@@ -92,14 +110,16 @@ class _DialogoAtributosPuntoState extends State<DialogoAtributosPunto> {
   late final TextEditingController _nombreCtrl;
   late final TextEditingController _notasCtrl;
 
-  int? _idTipo;
-  int? _idCategoria;
+  late int _idTipo;
+  late int _idCategoria;
   List<CatalogoItem> _categoriasFiltradas = [];
   bool _cargandoCategorias = false;
-  String? _errorCategorias;
 
   late EstadoEstructura _estado;
   late int _niveles;
+
+  List<CatalogoItem> get _listaTipos =>
+      widget.tipos.isNotEmpty ? widget.tipos : kTiposEstructuraDefault;
 
   @override
   void initState() {
@@ -109,42 +129,36 @@ class _DialogoAtributosPuntoState extends State<DialogoAtributosPunto> {
     _estado  = widget.estadoInicial ?? EstadoEstructura.presente;
     _niveles = widget.nivelesInicial ?? 1;
 
-    // Modo edición: carga las categorías del tipo guardado y luego
-    // preselecciona la categoría actual. Este orden es obligatorio.
-    if (widget.idTipoInicial != null) {
-      _idTipo = widget.idTipoInicial;
-      // Diferir para que el frame inicial se renderice antes de setState
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _cargarCategorias(_idTipo!, preseleccionarId: widget.idCategoriaInicial);
-      });
-    }
-    // Modo creación: tipo por defecto = primer tipo disponible
-    else if (widget.tipos.isNotEmpty) {
-      _idTipo = widget.tipos.first.id;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _cargarCategorias(_idTipo!);
-      });
-    }
+    _idTipo = widget.idTipoInicial ?? _listaTipos.first.id;
+    _idCategoria = widget.idCategoriaInicial ?? 1;
+    _categoriasFiltradas = List<CatalogoItem>.from(
+        kCategoriasEstructuraDefault[_idTipo] ?? kCategoriasEstructuraDefault[1]!);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _cargarCategorias(_idTipo, preseleccionarId: _idCategoria);
+    });
   }
 
   /// Llama a GET /api/capas/catalogos/estructuras/categorias?tipo={tipo}
   /// y actualiza el estado del combo de categoría.
-  ///
-  /// [preseleccionarId]: si se indica, selecciona esa categoría tras la carga
-  /// (útil en modo edición). Si no se indica, la selección queda en null (usuario elige).
   Future<void> _cargarCategorias(int tipo, {int? preseleccionarId}) async {
     setState(() {
       _cargandoCategorias = true;
-      _errorCategorias    = null;
-      _idCategoria        = null;         // siempre resetear al cambiar tipo
-      _categoriasFiltradas = [];
+      _categoriasFiltradas = List<CatalogoItem>.from(
+          kCategoriasEstructuraDefault[tipo] ?? kCategoriasEstructuraDefault[1]!);
+      if (preseleccionarId != null &&
+          _categoriasFiltradas.any((c) => c.id == preseleccionarId)) {
+        _idCategoria = preseleccionarId;
+      } else if (!_categoriasFiltradas.any((c) => c.id == _idCategoria)) {
+        _idCategoria = _categoriasFiltradas.first.id;
+      }
     });
 
     try {
       final uri = Uri.parse(
         '${widget.baseUrl}/api/capas/catalogos/estructuras/categorias?tipo=$tipo',
       );
-      final resp = await http.get(uri).timeout(const Duration(seconds: 6));
+      final resp = await http.get(uri).timeout(const Duration(seconds: 3));
 
       if (!mounted) return;
 
@@ -152,26 +166,25 @@ class _DialogoAtributosPuntoState extends State<DialogoAtributosPunto> {
         final lista = (jsonDecode(resp.body) as List)
             .map((e) => CatalogoItem.fromJson(e as Map<String, dynamic>))
             .toList();
-        setState(() {
-          _categoriasFiltradas = lista;
-          _cargandoCategorias  = false;
-          // En modo edición restaurar la categoría previa si sigue en la lista
-          if (preseleccionarId != null &&
-              lista.any((c) => c.id == preseleccionarId)) {
-            _idCategoria = preseleccionarId;
-          }
-        });
-      } else {
-        setState(() {
-          _cargandoCategorias = false;
-          _errorCategorias    = 'Error ${resp.statusCode} al cargar categorías';
-        });
+        if (lista.isNotEmpty) {
+          setState(() {
+            _categoriasFiltradas = lista;
+            _cargandoCategorias  = false;
+            if (preseleccionarId != null &&
+                lista.any((c) => c.id == preseleccionarId)) {
+              _idCategoria = preseleccionarId;
+            } else if (!lista.any((c) => c.id == _idCategoria)) {
+              _idCategoria = lista.first.id;
+            }
+          });
+          return;
+        }
       }
-    } catch (e) {
-      if (!mounted) return;
+    } catch (_) {}
+
+    if (mounted) {
       setState(() {
         _cargandoCategorias = false;
-        _errorCategorias    = 'Sin conexión al servidor';
       });
     }
   }
@@ -242,14 +255,14 @@ class _DialogoAtributosPuntoState extends State<DialogoAtributosPunto> {
                         style: Theme.of(context).textTheme.labelLarge),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<int>(
-                      value: widget.tipos.any((t) => t.id == _idTipo)
+                      value: _listaTipos.any((t) => t.id == _idTipo)
                           ? _idTipo
-                          : null,
+                          : _listaTipos.first.id,
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.home_work_outlined, size: 18),
                       ),
                       hint: const Text('Selecciona un tipo'),
-                      items: widget.tipos.map((t) {
+                      items: _listaTipos.map((t) {
                         return DropdownMenuItem<int>(
                           value: t.id,
                           child: Text(t.nombre,
@@ -359,8 +372,8 @@ class _DialogoAtributosPuntoState extends State<DialogoAtributosPunto> {
                 if (!_formKey.currentState!.validate()) return;
                 Navigator.pop(context, (
                   nombre: _nombreCtrl.text.trim(),
-                  idCategoria: _idCategoria ?? 1,
-                  idTipo: _idTipo ?? 1,
+                  idCategoria: _idCategoria,
+                  idTipo: _idTipo,
                   estado: _estado,
                   nivelesCantidad: _niveles,
                   notas: _notasCtrl.text.trim(),
@@ -376,75 +389,24 @@ class _DialogoAtributosPuntoState extends State<DialogoAtributosPunto> {
     );
   }
 
-  /// Construye el dropdown de categorías con los estados:
-  ///   • Sin tipo seleccionado → campo deshabilitado con mensaje guía.
-  ///   • Cargando desde API    → spinner + texto.
-  ///   • Error de red          → mensaje naranja + botón "Reintentar".
-  ///   • Datos disponibles     → DropdownButtonFormField normal.
+  /// Construye el dropdown de categorías
   Widget _buildComboCategorias(bool soloLectura) {
-    // Sin tipo seleccionado → deshabilitar
-    if (_idTipo == null) {
-      return InputDecorator(
-        decoration: const InputDecoration(
-          prefixIcon: Icon(Icons.category_outlined, size: 18),
-        ),
-        child: Text(
-          'Selecciona un tipo primero',
-          style: TextStyle(color: Theme.of(context).hintColor, fontSize: 14),
-        ),
-      );
-    }
-
-    // Cargando desde API
-    if (_cargandoCategorias) {
-      return const SizedBox(
-        height: 48,
-        child: Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              SizedBox(width: 10),
-              Text('Cargando categorías…', style: TextStyle(fontSize: 13)),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // Error de red o HTTP
-    if (_errorCategorias != null) {
-      return Row(
-        children: [
-          const Icon(Icons.warning_amber_rounded,
-              color: Colors.orange, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              _errorCategorias!,
-              style: const TextStyle(color: Colors.orange, fontSize: 13),
-            ),
-          ),
-          TextButton(
-            onPressed: () =>
-                _cargarCategorias(_idTipo!, preseleccionarId: _idCategoria),
-            child: const Text('Reintentar'),
-          ),
-        ],
-      );
-    }
-
-    // Datos disponibles
     return DropdownButtonFormField<int>(
       value: _categoriasFiltradas.any((c) => c.id == _idCategoria)
           ? _idCategoria
-          : null,
-      decoration: const InputDecoration(
-        prefixIcon: Icon(Icons.category_outlined, size: 18),
+          : (_categoriasFiltradas.isNotEmpty ? _categoriasFiltradas.first.id : null),
+      decoration: InputDecoration(
+        prefixIcon: const Icon(Icons.category_outlined, size: 18),
+        suffixIcon: _cargandoCategorias
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: Padding(
+                  padding: EdgeInsets.all(12),
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            : null,
       ),
       hint: const Text('Selecciona una categoría'),
       isExpanded: true,
@@ -454,7 +416,9 @@ class _DialogoAtributosPuntoState extends State<DialogoAtributosPunto> {
           child: Text(c.nombre, style: const TextStyle(fontSize: 13)),
         );
       }).toList(),
-      onChanged: soloLectura ? null : (v) => setState(() => _idCategoria = v),
+      onChanged: soloLectura ? null : (v) {
+        if (v != null) setState(() => _idCategoria = v);
+      },
       validator: (v) => (!soloLectura && v == null)
           ? 'Seleccione una categoría'
           : null,

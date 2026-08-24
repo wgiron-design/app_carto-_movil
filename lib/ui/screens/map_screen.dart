@@ -48,7 +48,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _modoInfoActivo = false;
   /// Catálogo de tipos (Formal/Referencia) cargado al iniciar.
   /// Se pasa al DialogoAtributosPunto para evitar llamadas extra al abrir el diálogo.
-  List<CatalogoItem> _tiposCatalogo = const [];
+  List<CatalogoItem> _tiposCatalogo = kTiposEstructuraDefault;
 
   @override
   void initState() {
@@ -72,15 +72,17 @@ class _MapScreenState extends State<MapScreen> {
     try {
       final svc = PostGISService();
       final uri = Uri.parse('${svc.baseUrl}/api/capas/catalogos/estructuras/tipos');
-      final resp = await http.get(uri).timeout(const Duration(seconds: 6));
+      final resp = await http.get(uri).timeout(const Duration(seconds: 4));
       if (resp.statusCode == 200 && mounted) {
         final lista = (jsonDecode(resp.body) as List)
             .map((e) => CatalogoItem.fromJson(e as Map<String, dynamic>))
             .toList();
-        setState(() => _tiposCatalogo = lista);
+        if (lista.isNotEmpty) {
+          setState(() => _tiposCatalogo = lista);
+        }
       }
     } catch (e) {
-      debugPrint('[MapScreen] No se pudo cargar catálogo de tipos: $e');
+      debugPrint('[MapScreen] No se pudo cargar catálogo de tipos del servidor, usando defaults offline');
     }
   }
 
@@ -1374,117 +1376,82 @@ class _MapScreenState extends State<MapScreen> {
                 final esPropietario = (punto.createdBy == null) ||
                     (auth.currentUserId != null && punto.createdBy.toString() == auth.currentUserId.toString());
 
-                return Column(
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            icon: const Icon(Icons.account_tree_outlined, size: 16),
-                            label: const Text('Niveles', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF4FC3F7),
-                              foregroundColor: Colors.white,
-                            ),
-                            onPressed: () async {
-                              Navigator.pop(context);
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => NivelListaScreen(puntoEstructura: punto),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.edit_outlined, size: 16),
-                            label: const Text('Editar', style: TextStyle(fontSize: 12)),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFFFFB74D),
-                              side: const BorderSide(color: Color(0xFFFFB74D)),
-                            ),
-                            onPressed: () async {
-                              if (!esPropietario) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('⚠️ Solo el creador puede editar este elemento'),
-                                    backgroundColor: AppTheme.warning,
-                                  ),
-                                );
-                                return;
-                              }
-                              Navigator.pop(context);
-                              final result = await showDialog<AtributosPuntoResult>(
-                                context: context,
-                                builder: (_) => DialogoAtributosPunto(
-                                  lat: punto.coordenadas.latitude,
-                                  lng: punto.coordenadas.longitude,
-                                  baseUrl: PostGISService().baseUrl,
-                                  tipos: _tiposCatalogo,
-                                  nombreInicial: punto.nombre,
-                                  idCategoriaInicial: punto.idCategoria,
-                                  idTipoInicial: punto.idTipo,
-                                  estadoInicial: punto.estado,
-                                  nivelesInicial: punto.nivelesCantidad,
-                                  notasIniciales: punto.notas,
-                                  soloLectura: !esPropietario,
-                                  onAbrirNiveles: () async {
-                                    Navigator.pop(context);
-                                    await Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => NivelListaScreen(puntoEstructura: punto),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              );
-                              if (result != null && mounted && esPropietario) {
-                                final puntoEditado = PuntoEstructura(
-                                  id: punto.id,
-                                  coordenadas: punto.coordenadas,
-                                  nombre: result.nombre,
-                                  idCategoria: result.idCategoria,
-                                  idTipo: result.idTipo,
-                                  estado: result.estado,
-                                  nivelesCantidad: result.nivelesCantidad,
-                                  notas: result.notas,
-                                  niveles: punto.niveles,
-                                  fechaCreacion: punto.fechaCreacion,
-                                  updatedAt: DateTime.now(),
-                                  syncDirty: true,
-                                  createdBy: punto.createdBy,
-                                  updatedBy: auth.currentUserId,
-                                  deviceId: punto.deviceId,
-                                  syncVersion: punto.syncVersion,
-                                );
-                                digCtrl.actualizarPunto(puntoEditado);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('✅ Estructura "${result.nombre}" actualizada. Abriendo niveles...'),
-                                    backgroundColor: AppTheme.success,
-                                  ),
-                                );
-
-                                // Navegar a NivelListaScreen tras guardar edición
-                                if (mounted) {
-                                  await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => NivelListaScreen(puntoEstructura: puntoEditado),
-                                    ),
-                                  );
-                                }
-                              }
-                            },
-                          ),
-                        ),
-                      ],
+                return SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('Editar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFFFB74D),
+                      side: const BorderSide(color: Color(0xFFFFB74D)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
-                  ],
+                    onPressed: () async {
+                      if (!esPropietario) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('⚠️ Solo el creador puede editar este elemento'),
+                            backgroundColor: AppTheme.warning,
+                          ),
+                        );
+                        return;
+                      }
+                      Navigator.pop(context);
+                      final result = await showDialog<AtributosPuntoResult>(
+                        context: context,
+                        builder: (_) => DialogoAtributosPunto(
+                          lat: punto.coordenadas.latitude,
+                          lng: punto.coordenadas.longitude,
+                          baseUrl: PostGISService().baseUrl,
+                          tipos: _tiposCatalogo,
+                          nombreInicial: punto.nombre,
+                          idCategoriaInicial: punto.idCategoria,
+                          idTipoInicial: punto.idTipo,
+                          estadoInicial: punto.estado,
+                          nivelesInicial: punto.nivelesCantidad,
+                          notasIniciales: punto.notas,
+                          soloLectura: !esPropietario,
+                          onAbrirNiveles: () async {
+                            Navigator.pop(context);
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => NivelListaScreen(puntoEstructura: punto),
+                              ),
+                            );
+                          },
+                        ),
+                      );
+                      if (result != null && mounted && esPropietario) {
+                        final puntoEditado = PuntoEstructura(
+                          id: punto.id,
+                          coordenadas: punto.coordenadas,
+                          nombre: result.nombre,
+                          idCategoria: result.idCategoria,
+                          idTipo: result.idTipo,
+                          estado: result.estado,
+                          nivelesCantidad: result.nivelesCantidad,
+                          notas: result.notas,
+                          niveles: punto.niveles,
+                          fechaCreacion: punto.fechaCreacion,
+                          updatedAt: DateTime.now(),
+                          syncDirty: true,
+                          createdBy: punto.createdBy,
+                          updatedBy: auth.currentUserId,
+                          deviceId: punto.deviceId,
+                          syncVersion: punto.syncVersion,
+                        );
+                        digCtrl.actualizarPunto(puntoEditado);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('✅ Estructura "${result.nombre}" actualizada.'),
+                            backgroundColor: AppTheme.success,
+                          ),
+                        );
+                      }
+                    },
+                  ),
                 );
               }),
             ] else ...[
@@ -2260,7 +2227,11 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
 
-    final bool exito = await digCtrl.sincronizarOfflineBatch();
+    final auth = Provider.of<AuthController>(context, listen: false);
+    final bool exito = await digCtrl.sincronizarOfflineBatch(
+      userId: auth.currentUserId,
+      deviceId: auth.deviceId,
+    );
 
     if (context.mounted) Navigator.of(context).pop();
     if (!context.mounted) return;

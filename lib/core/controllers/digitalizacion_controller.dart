@@ -1692,7 +1692,7 @@ class DigitalizacionController extends ChangeNotifier {
     }
   }
 
-  Future<bool> sincronizarOfflineBatch() async {
+  Future<bool> sincronizarOfflineBatch({String? userId, String? deviceId}) async {
     final service = PostGISService();
     final dirtyPuntos = puntos.where((p) => p.syncDirty).toList();
     final dirtyLineas = lineas.where((l) => l.syncDirty).toList();
@@ -1706,10 +1706,20 @@ class DigitalizacionController extends ChangeNotifier {
       puntos: dirtyPuntos,
       lineas: dirtyLineas,
       poligonos: dirtyPoligonos,
+      userId: userId,
+      deviceId: deviceId,
     );
 
     if (ok) {
       _onlinePostGIS = true;
+      try {
+        final db = await DatabaseHelper().database;
+        await db.rawUpdate('UPDATE estructuras SET sync_dirty = 0 WHERE sync_dirty = 1');
+        await db.rawUpdate('UPDATE caminos SET sync_dirty = 0 WHERE sync_dirty = 1');
+        await db.rawUpdate('UPDATE upm SET sync_dirty = 0 WHERE sync_dirty = 1');
+      } catch (e) {
+        debugPrint('[DigitalizacionController] Error actualizando sync_dirty en SQLite: $e');
+      }
       await cargarDesdePostGIS();
       return true;
     }
