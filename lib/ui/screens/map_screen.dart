@@ -2230,13 +2230,24 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
 
-    final auth = Provider.of<AuthController>(context, listen: false);
-    final bool exito = await digCtrl.sincronizarOfflineBatch(
-      userId: auth.currentUserId,
-      deviceId: auth.deviceId,
-    );
+    bool exito = false;
+    String? errorMsg;
 
-    if (context.mounted) Navigator.of(context).pop();
+    try {
+      final auth = Provider.of<AuthController>(context, listen: false);
+      exito = await digCtrl.sincronizarOfflineBatch(
+        userId: auth.currentUserId,
+        deviceId: auth.deviceId,
+      );
+    } catch (e, stack) {
+      debugPrint('[MapScreen] Error ejecutando sincronización: $e\n$stack');
+      errorMsg = e.toString();
+    } finally {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+
     if (!context.mounted) return;
 
     if (exito) {
@@ -2249,10 +2260,12 @@ class _MapScreenState extends State<MapScreen> {
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('⚠️ No se pudo sincronizar con Postgres. Verifique su conexión.'),
+        SnackBar(
+          content: Text(errorMsg != null 
+              ? '⚠️ Error de sincronización: $errorMsg' 
+              : '⚠️ No se pudo sincronizar con Postgres. Verifique su conexión.'),
           backgroundColor: AppTheme.error,
-          duration: Duration(seconds: 4),
+          duration: const Duration(seconds: 4),
         ),
       );
     }
@@ -2263,10 +2276,16 @@ class _MapScreenState extends State<MapScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => const AlertDialog(
+        backgroundColor: AppTheme.surface,
         content: Row(
           children: [
-            CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
+              ),
             ),
             SizedBox(width: 16),
             Expanded(
@@ -2280,39 +2299,60 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
 
-    final auth = Provider.of<AuthController>(context, listen: false);
-    final resultado = await digCtrl.sincronizarYActualizar(
-      userId: auth.currentUserId,
-      deviceId: auth.deviceId,
-    );
+    ({bool exito, bool offline, String mensaje})? resultado;
+    String? errorExcepcion;
 
-    if (context.mounted) Navigator.of(context).pop();
+    try {
+      final auth = Provider.of<AuthController>(context, listen: false);
+      resultado = await digCtrl.sincronizarYActualizar(
+        userId: auth.currentUserId,
+        deviceId: auth.deviceId,
+      );
+    } catch (e, stack) {
+      debugPrint('[MapScreen] Error ejecutando Sinc & Update: $e\n$stack');
+      errorExcepcion = e.toString();
+    } finally {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+    }
+
     if (!context.mounted) return;
 
-    if (resultado.offline) {
+    if (errorExcepcion != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('📡 ${resultado.mensaje}'),
-          backgroundColor: const Color(0xFFFF9800),
-          duration: const Duration(seconds: 4),
-        ),
-      );
-    } else if (resultado.exito) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Proyecto sincronizado'),
-          backgroundColor: AppTheme.success,
-          duration: Duration(seconds: 3),
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('⚠️ ${resultado.mensaje}'),
+          content: Text('⚠️ Error inesperado: $errorExcepcion'),
           backgroundColor: AppTheme.error,
           duration: const Duration(seconds: 4),
         ),
       );
+    } else if (resultado != null) {
+      if (resultado.offline) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('📡 ${resultado.mensaje}'),
+            backgroundColor: const Color(0xFFFF9800),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      } else if (resultado.exito) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Proyecto sincronizado'),
+            backgroundColor: AppTheme.success,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('⚠️ ${resultado.mensaje}'),
+            backgroundColor: AppTheme.error,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     }
   }
 

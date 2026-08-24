@@ -1759,39 +1759,49 @@ class DigitalizacionController extends ChangeNotifier {
         nivelesMaps.isEmpty &&
         localesMaps.isEmpty &&
         hogaresMaps.isEmpty) {
-      debugPrint('[DigitalizacionController] Nada pendiente por sincronizar');
+      debugPrint('[DigitalizacionController] ℹ️ Nada pendiente por sincronizar');
       return true;
     }
 
-    final ok = await service.sincronizarOfflineBatch(
-      puntos: dirtyPuntos,
-      lineas: dirtyLineas,
-      poligonos: dirtyPoligonos,
-      niveles: nivelesMaps,
-      locales: localesMaps,
-      hogares: hogaresMaps,
-      userId: userId,
-      deviceId: deviceId,
-    );
+    debugPrint('[DigitalizacionController] 📤 Iniciando sincronización por lote: ${dirtyPuntos.length} puntos, ${dirtyLineas.length} líneas, ${dirtyPoligonos.length} polígonos, ${nivelesMaps.length} niveles, ${localesMaps.length} locales, ${hogaresMaps.length} hogares');
 
-    if (ok) {
-      _onlinePostGIS = true;
-      try {
-        await db.transaction((txn) async {
-          await txn.rawUpdate('UPDATE estructuras SET sync_dirty = 0 WHERE sync_dirty = 1');
-          await txn.rawUpdate('UPDATE caminos SET sync_dirty = 0 WHERE sync_dirty = 1');
-          await txn.rawUpdate('UPDATE upm SET sync_dirty = 0 WHERE sync_dirty = 1');
-          await txn.rawUpdate('UPDATE niveles SET sync_dirty = 0 WHERE sync_dirty = 1');
-          await txn.rawUpdate('UPDATE locales SET sync_dirty = 0 WHERE sync_dirty = 1');
-          await txn.rawUpdate('UPDATE hogares SET sync_dirty = 0 WHERE sync_dirty = 1');
-        });
-      } catch (e) {
-        debugPrint('[DigitalizacionController] Error actualizando sync_dirty en SQLite: $e');
+    try {
+      final ok = await service.sincronizarOfflineBatch(
+        puntos: dirtyPuntos,
+        lineas: dirtyLineas,
+        poligonos: dirtyPoligonos,
+        niveles: nivelesMaps,
+        locales: localesMaps,
+        hogares: hogaresMaps,
+        userId: userId,
+        deviceId: deviceId,
+      );
+
+      if (ok) {
+        _onlinePostGIS = true;
+        try {
+          await db.transaction((txn) async {
+            await txn.rawUpdate('UPDATE estructuras SET sync_dirty = 0 WHERE sync_dirty = 1');
+            await txn.rawUpdate('UPDATE caminos SET sync_dirty = 0 WHERE sync_dirty = 1');
+            await txn.rawUpdate('UPDATE upm SET sync_dirty = 0 WHERE sync_dirty = 1');
+            await txn.rawUpdate('UPDATE niveles SET sync_dirty = 0 WHERE sync_dirty = 1');
+            await txn.rawUpdate('UPDATE locales SET sync_dirty = 0 WHERE sync_dirty = 1');
+            await txn.rawUpdate('UPDATE hogares SET sync_dirty = 0 WHERE sync_dirty = 1');
+          });
+          debugPrint('[DigitalizacionController] ✅ sync_dirty limpiado exitosamente en SQLite');
+        } catch (e) {
+          debugPrint('[DigitalizacionController] ⚠️ Error actualizando sync_dirty en SQLite: $e');
+        }
+        await cargarDesdeBD();
+        return true;
+      } else {
+        debugPrint('[DigitalizacionController] ❌ El servidor rechazó la sincronización por lote');
+        return false;
       }
-      await cargarDesdeBD();
-      return true;
+    } catch (e, stack) {
+      debugPrint('[DigitalizacionController] ❌ Excepción en sincronizarOfflineBatch: $e\n$stack');
+      return false;
     }
-    return false;
   }
 
   /// Sincroniza cambios locales a Postgres y luego reemplaza la base local
@@ -1803,8 +1813,10 @@ class DigitalizacionController extends ChangeNotifier {
     final service = PostGISService();
 
     // 1. Probar conectividad
+    debugPrint('[DigitalizacionController] 🔍 Verificando conectividad con el backend...');
     final online = await service.probeAndFixBaseUrl();
     if (!online) {
+      debugPrint('[DigitalizacionController] 📡 Backend no disponible (modo offline)');
       _onlinePostGIS = false;
       notifyListeners();
       return (
@@ -1817,6 +1829,7 @@ class DigitalizacionController extends ChangeNotifier {
     _onlinePostGIS = true;
 
     // 2. Subir primero todos los cambios pendientes
+    debugPrint('[DigitalizacionController] ⬆️ Paso 1: Subiendo cambios locales pendientes...');
     final subidaOk = await sincronizarOfflineBatch(userId: userId, deviceId: deviceId);
     if (!subidaOk) {
       return (
@@ -1827,12 +1840,15 @@ class DigitalizacionController extends ChangeNotifier {
     }
 
     // 3. Descargar todos los registros directamente desde Postgres
+    debugPrint('[DigitalizacionController] ⬇️ Paso 2: Descargando datos completos desde Postgres...');
     try {
       final nuevasEstructuras = await service.getEstructuras();
       final nuevosCaminos = await service.getCaminos();
       final nuevasUPMs = await service.getUPMs();
+      debugPrint('[DigitalizacionController] 📦 Descargados: ${nuevasEstructuras.length} estructuras, ${nuevosCaminos.length} caminos, ${nuevasUPMs.length} UPMs');
 
       // 4. Reemplazar SQLite local con los datos descargados
+      debugPrint('[DigitalizacionController] 💾 Paso 3: Reemplazando SQLite local...');
       await DatabaseHelper().reemplazarTodoDesdeServidor(
         estructuras: nuevasEstructuras,
         caminos: nuevosCaminos,
@@ -1840,15 +1856,17 @@ class DigitalizacionController extends ChangeNotifier {
       );
 
       // 5. Recargar la memoria de la aplicación
+      debugPrint('[DigitalizacionController] 🔄 Paso 4: Recargando estado en memoria...');
       await cargarDesdeBD();
 
+      debugPrint('[DigitalizacionController] ✅ Sinc & Update completado con éxito');
       return (
         exito: true,
         offline: false,
         mensaje: 'Proyecto sincronizado',
       );
-    } catch (e) {
-      debugPrint('[DigitalizacionController] Error descargando desde Postgres: $e');
+    } catch (e, stack) {
+      debugPrint('[DigitalizacionController] ❌ Error descargando desde Postgres: $e\n$stack');
       return (
         exito: false,
         offline: false,
