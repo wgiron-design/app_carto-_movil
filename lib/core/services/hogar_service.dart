@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:uuid/uuid.dart';
 import 'postgis_service.dart';
 import '../models/capa_geometrica.dart';
 import '../models/jerarquia.dart';
+import '../database/database_helper.dart';
 
 class HogarApiException implements Exception {
   final String code;
@@ -122,6 +124,7 @@ class HogarListResponse {
   final String localId;
   final String nombreLocal;
   final int idTipo;
+  final int? idCondicionLocal;
   final int numeroHogaresEsperados;
   final int hogaresRegistrados;
   final List<HogarResumen> hogares;
@@ -130,6 +133,7 @@ class HogarListResponse {
     required this.localId,
     required this.nombreLocal,
     required this.idTipo,
+    this.idCondicionLocal,
     required this.numeroHogaresEsperados,
     required this.hogaresRegistrados,
     required this.hogares,
@@ -139,13 +143,24 @@ class HogarListResponse {
     return HogarListResponse(
       localId: json['local_id'] as String,
       nombreLocal: json['nombre_local'] as String? ?? 'Local',
-      idTipo: (json['id_tipo'] as num).toInt(),
-      numeroHogaresEsperados: (json['numero_hogares_esperados'] as num).toInt(),
-      hogaresRegistrados: (json['hogares_registrados'] as num).toInt(),
+      idTipo: (json['id_tipo'] as num? ?? json['id_tipo_local'] as num? ?? 1).toInt(),
+      idCondicionLocal: json['id_condicion_local'] != null ? (json['id_condicion_local'] as num).toInt() : null,
+      numeroHogaresEsperados: (json['numero_hogares_esperados'] as num? ?? 1).toInt(),
+      hogaresRegistrados: (json['hogares_registrados'] as num? ?? 0).toInt(),
       hogares: (json['hogares'] as List? ?? [])
           .map((h) => HogarResumen.fromJson(h as Map<String, dynamic>))
           .toList(),
     );
+  }
+
+  bool get esCompleto {
+    if (idCondicionLocal == 4 || idCondicionLocal == 5) return true; // Desocupado / Rechazo
+    if (idTipo == 4 || idTipo == 5) return true;                     // Institución / En Construcción
+    if (hogaresRegistrados < numeroHogaresEsperados) return false;
+    for (var hogar in hogares) {
+      if (!hogar.esValidoMatematicamente) return false;
+    }
+    return true;
   }
 }
 
@@ -154,6 +169,7 @@ class HogarService {
   factory HogarService() => _instance;
   HogarService._internal();
 
+  final _uuid = const Uuid();
   String get _baseUrl => PostGISService().baseUrl;
 
   Future<List<CatalogoItem>> getSexos() async {
@@ -218,6 +234,7 @@ class HogarService {
       final locMaps = await db.query('locales', where: 'id = ?', whereArgs: [localId]);
       final nomLoc = locMaps.isNotEmpty ? ((locMaps.first['nombre_local'] ?? locMaps.first['nombre']) as String? ?? 'Local') : 'Local';
       final idTipo = locMaps.isNotEmpty ? ((locMaps.first['id_tipo'] as num?)?.toInt() ?? 1) : 1;
+      final idCond = locMaps.isNotEmpty ? (locMaps.first['id_condicion_local'] as num?)?.toInt() : null;
       final numHogEsp = locMaps.isNotEmpty ? ((locMaps.first['numero_hogares'] as num?)?.toInt() ?? 1) : 1;
 
       final hgMaps = await db.query('hogares', where: 'local_id = ? AND deleted_at IS NULL', whereArgs: [localId]);
@@ -231,7 +248,18 @@ class HogarService {
           idSexo: h['id_sexo'] != null ? (h['id_sexo'] as num).toInt() : null,
           idIdioma: h['id_idioma'] != null ? (h['id_idioma'] as num).toInt() : null,
           direccion: h['direccion'] as String?,
-          totalHabitantes: h['total_habitantes'] != null ? (h['total_habitantes'] as num).toInt() : null,
+          totalHabitantes: (h['total_habitantes'] as num? ?? 0).toInt(),
+          personas_0_5: (h['personas_0_5'] as num? ?? 0).toInt(),
+          personas_6_11: (h['personas_6_11'] as num? ?? 0).toInt(),
+          personas_12_17: (h['personas_12_17'] as num? ?? 0).toInt(),
+          personas_18_23: (h['personas_18_23'] as num? ?? 0).toInt(),
+          personas_24_34: (h['personas_24_34'] as num? ?? 0).toInt(),
+          personas_35_44: (h['personas_35_44'] as num? ?? 0).toInt(),
+          personas_45_59: (h['personas_45_59'] as num? ?? 0).toInt(),
+          personas_60_69: (h['personas_60_69'] as num? ?? 0).toInt(),
+          personas_70_79: (h['personas_70_79'] as num? ?? 0).toInt(),
+          personas_80_mas: (h['personas_80_mas'] as num? ?? 0).toInt(),
+          personasNoEdad: (h['personas_no_edad'] as num? ?? 0).toInt(),
           updatedAt: h['updated_at'] != null ? DateTime.parse(h['updated_at'] as String) : null,
         ));
       }
@@ -240,6 +268,7 @@ class HogarService {
         localId: localId,
         nombreLocal: nomLoc,
         idTipo: idTipo,
+        idCondicionLocal: idCond,
         numeroHogaresEsperados: numHogEsp,
         hogaresRegistrados: lista.length,
         hogares: lista,
@@ -295,7 +324,8 @@ class HogarService {
       }
     } catch (_) {}
 
-    final nuevoHogar = Hogar.nuevo(
+    final nuevoHogar = Hogar(
+      id: _uuid.v4(),
       idLocal: localId,
       jefeFamilia: jefeFamilia ?? '',
       idSexo: idSexo,
@@ -313,6 +343,8 @@ class HogarService {
       personas_70_79: p70_79,
       personas_80_mas: p80mas,
       personasNoEdad: pNoEdad,
+      updatedAt: DateTime.now(),
+      syncDirty: true,
     );
     await DatabaseHelper().insertEntity('hogares', nuevoHogar.toMapDB());
     return nuevoHogar;
