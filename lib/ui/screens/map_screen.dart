@@ -1373,8 +1373,16 @@ class _MapScreenState extends State<MapScreen> {
             if (digCtrl.modoEdicion) ...[
               Builder(builder: (context) {
                 final auth = Provider.of<AuthController>(context, listen: false);
-                final esPropietario = (punto.createdBy == null) ||
-                    (auth.currentUserId != null && punto.createdBy.toString() == auth.currentUserId.toString());
+                final esPropietario = digCtrl.esPropietario(punto.createdBy, auth.currentUserId);
+                void mostrarMensajeNoPropietario() {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Ud. no creo este elemento, no tiene permisos de edición'),
+                      backgroundColor: AppTheme.warning,
+                      duration: Duration(seconds: 3),
+                    ),
+                  );
+                }
 
                 return SizedBox(
                   width: double.infinity,
@@ -1382,19 +1390,14 @@ class _MapScreenState extends State<MapScreen> {
                     icon: const Icon(Icons.edit_outlined, size: 16),
                     label: const Text('Editar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFFFB74D),
-                      side: const BorderSide(color: Color(0xFFFFB74D)),
+                      foregroundColor: esPropietario ? const Color(0xFFFFB74D) : Colors.grey,
+                      side: BorderSide(color: esPropietario ? const Color(0xFFFFB74D) : Colors.grey),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     onPressed: () async {
                       if (!esPropietario) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('⚠️ Solo el creador puede editar este elemento'),
-                            backgroundColor: AppTheme.warning,
-                          ),
-                        );
+                        mostrarMensajeNoPropietario();
                         return;
                       }
                       Navigator.pop(context);
