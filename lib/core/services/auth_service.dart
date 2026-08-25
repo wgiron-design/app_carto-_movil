@@ -157,6 +157,35 @@ class AuthService {
     }
   }
 
+  Future<http.Response> _patchWithAutoProbe(String path, Map<String, dynamic> body, String token) async {
+    Uri url = Uri.parse('$_baseUrl$path');
+    try {
+      return await http.patch(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode(body),
+      ).timeout(const Duration(seconds: 8));
+    } catch (e) {
+      debugPrint('[AuthService] Falló conexión PATCH con $_baseUrl. Probando alternativas...');
+      final found = await PostGISService().probeAndFixBaseUrl();
+      if (found) {
+        url = Uri.parse('$_baseUrl$path');
+        return await http.patch(
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: json.encode(body),
+        ).timeout(const Duration(seconds: 8));
+      }
+      rethrow;
+    }
+  }
+
   /// Obtiene los datos del perfil actual usando el token de sesión.
   Future<UserModel> getMe(String token) async {
     try {
@@ -172,6 +201,87 @@ class AuthService {
     } catch (e) {
       if (e is AuthException) rethrow;
       throw AuthException('Error al validar sesión');
+    }
+  }
+
+  /// Actualiza el nombre de usuario del usuario autenticado.
+  Future<UserModel> updateUsername(String newUsername, String token) async {
+    try {
+      final response = await _patchWithAutoProbe(
+        '/api/v1/auth/me/username',
+        {'new_username': newUsername.trim()},
+        token,
+      );
+
+      final data = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return UserModel.fromJson(data);
+      } else {
+        final detail = data['detail'] ?? 'Error al actualizar nombre de usuario';
+        throw AuthException(detail.toString(), statusCode: response.statusCode);
+      }
+    } catch (e) {
+      if (e is AuthException) rethrow;
+      debugPrint('[AuthService] Error al actualizar username: $e');
+      throw AuthException('No se pudo conectar con el servidor para actualizar el nombre de usuario.');
+    }
+  }
+
+  /// Actualiza el correo electrónico del usuario autenticado.
+  Future<UserModel> updateEmail(String newEmail, String token) async {
+    try {
+      final response = await _patchWithAutoProbe(
+        '/api/v1/auth/me/email',
+        {'new_email': newEmail.trim()},
+        token,
+      );
+
+      final data = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return UserModel.fromJson(data);
+      } else {
+        final detail = data['detail'] ?? 'Error al actualizar correo electrónico';
+        throw AuthException(detail.toString(), statusCode: response.statusCode);
+      }
+    } catch (e) {
+      if (e is AuthException) rethrow;
+      debugPrint('[AuthService] Error al actualizar email: $e');
+      throw AuthException('No se pudo conectar con el servidor para actualizar el correo electrónico.');
+    }
+  }
+
+  /// Actualiza la contraseña del usuario autenticado.
+  Future<String> updatePassword(
+    String currentPassword,
+    String newPassword,
+    String confirmPassword,
+    String token,
+  ) async {
+    try {
+      final response = await _patchWithAutoProbe(
+        '/api/v1/auth/me/password',
+        {
+          'current_password': currentPassword,
+          'new_password': newPassword,
+          'confirm_password': confirmPassword,
+        },
+        token,
+      );
+
+      final data = json.decode(response.body);
+
+      if (response.statusCode == 200) {
+        return data['message'] ?? 'Contraseña actualizada exitosamente.';
+      } else {
+        final detail = data['detail'] ?? 'Error al cambiar contraseña';
+        throw AuthException(detail.toString(), statusCode: response.statusCode);
+      }
+    } catch (e) {
+      if (e is AuthException) rethrow;
+      debugPrint('[AuthService] Error al cambiar password: $e');
+      throw AuthException('No se pudo conectar con el servidor para cambiar la contraseña.');
     }
   }
 }

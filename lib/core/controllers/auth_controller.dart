@@ -151,6 +151,110 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  Future<bool> updateUsername(String newUsername) async {
+    if (_token == null) {
+      _errorMessage = 'Sesión no válida o expirada.';
+      notifyListeners();
+      return false;
+    }
+
+    _isLoading = true;
+    _errorMessage = null;
+    _successMessage = null;
+    notifyListeners();
+
+    try {
+      final updatedUser = await _authService.updateUsername(newUsername, _token!);
+      _currentUser = updatedUser;
+      _successMessage = 'Nombre de usuario actualizado exitosamente.';
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } on AuthException catch (e) {
+      _errorMessage = e.message;
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = 'Error inesperado al actualizar el nombre de usuario.';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> updateEmail(String newEmail) async {
+    if (_token == null) {
+      _errorMessage = 'Sesión no válida o expirada.';
+      notifyListeners();
+      return false;
+    }
+
+    _isLoading = true;
+    _errorMessage = null;
+    _successMessage = null;
+    notifyListeners();
+
+    try {
+      final updatedUser = await _authService.updateEmail(newEmail, _token!);
+      _currentUser = updatedUser;
+      _successMessage = 'Correo electrónico actualizado exitosamente.';
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } on AuthException catch (e) {
+      _errorMessage = e.message;
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = 'Error inesperado al actualizar el correo electrónico.';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> updatePassword(
+    String currentPassword,
+    String newPassword,
+    String confirmPassword,
+  ) async {
+    if (_token == null) {
+      _errorMessage = 'Sesión no válida o expirada.';
+      notifyListeners();
+      return false;
+    }
+
+    _isLoading = true;
+    _errorMessage = null;
+    _successMessage = null;
+    notifyListeners();
+
+    try {
+      final msg = await _authService.updatePassword(
+        currentPassword,
+        newPassword,
+        confirmPassword,
+        _token!,
+      );
+      _successMessage = msg;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } on AuthException catch (e) {
+      _errorMessage = e.message;
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = 'Error inesperado al cambiar la contraseña.';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   void logout() {
     _currentUser = null;
     _token = null;

@@ -25,6 +25,7 @@ import '../../ui/widgets/panel_digitacion.dart';
 import '../../ui/widgets/snap_indicator.dart';
 import 'jerarquia_screen.dart';
 import 'nivel_lista_screen.dart';
+import '../../ui/widgets/cuenta_usuario_modal.dart';
 
 /// Pantalla principal del visor de mapas (Pasos 2 + 3).
 class MapScreen extends StatefulWidget {
@@ -2143,6 +2144,58 @@ class _MapScreenState extends State<MapScreen> {
               _BarraBtn(icon: Icons.center_focus_strong_outlined, label: 'Centrar',
                   onTap: () => _centrarEnImagen(mapCtrl)),
             ],
+            const SizedBox(width: 6),
+            // ── Botón: Mi Cuenta de Usuario ──────────────────────────
+            Consumer<AuthController>(
+              builder: (ctx, auth, _) {
+                final username = auth.currentUser?.username;
+                final displayLabel = (username != null && username.isNotEmpty)
+                    ? username
+                    : 'Mi Cuenta';
+
+                return Tooltip(
+                  message: 'Mi Cuenta ($displayLabel)',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: () => CuentaUsuarioModal.mostrar(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: AppTheme.primary.withValues(alpha: 0.4),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.account_circle,
+                            color: AppTheme.primary,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 6),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 110),
+                            child: Text(
+                              displayLabel,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppTheme.onSurface,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
             const SizedBox(width: 8),
             _BarraBtn(
               icon: Icons.power_settings_new,

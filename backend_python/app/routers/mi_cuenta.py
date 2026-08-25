@@ -5,11 +5,75 @@ import uuid
 
 from app.database import get_db_pool
 from app.security import get_current_active_user, verify_password, hash_password
-from app.schemas.mi_cuenta import UpdateEmailRequest, UpdatePasswordRequest
-from app.schemas.auth import UserResponse, RoleEnum
+from app.schemas.mi_cuenta import UpdateUsernameRequest, UpdateEmailRequest, UpdatePasswordRequest
+from app.schemas.auth import UserResponse
 from app.services.auditoria import registrar_auditoria
 
 router = APIRouter(prefix="/api/v1/auth/me", tags=["Mi Cuenta"])
+
+@router.patch("/username", response_model=UserResponse)
+async def update_my_username(
+    payload: UpdateUsernameRequest,
+    current_user: Dict[str, Any] = Depends(get_current_active_user),
+    pool: asyncpg.Pool = Depends(get_db_pool)
+):
+    """
+    Actualiza el nombre de usuario del usuario autenticado.
+    """
+    user_uuid = uuid.UUID(str(current_user["id"]))
+    new_username = payload.new_username.strip()
+
+    async with pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            "SELECT id FROM users WHERE LOWER(username) = LOWER($1) AND id != $2",
+            new_username, user_uuid
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="El nombre de usuario ya está registrado por otro usuario."
+            )
+
+        await conn.execute("""
+            UPDATE users 
+            SET username = $1, updated_at = NOW() 
+            WHERE id = $2
+        """, new_username, user_uuid)
+
+        row = await conn.fetchrow("""
+            SELECT 
+                u.id, 
+                u.username, 
+                u.email, 
+                COALESCE(r.descripcion, 'cartografo') as role, 
+                u.id_cat_rol,
+                u.is_active, 
+                u.created_at, 
+                u.last_login_at 
+            FROM users u
+            LEFT JOIN cat_roles r ON u.id_cat_rol = r.id
+            WHERE u.id = $1
+        """, user_uuid)
+
+    await registrar_auditoria(
+        pool=pool,
+        id_actor=str(user_uuid),
+        accion="CAMBIO_USERNAME_PROPIO",
+        entidad="users",
+        entidad_id=str(user_uuid),
+        detalle={"old_username": current_user["username"], "new_username": new_username}
+    )
+
+    return UserResponse(
+        id=str(row["id"]),
+        username=row["username"],
+        email=row["email"],
+        role=row["role"],
+        id_cat_rol=str(row["id_cat_rol"]) if row["id_cat_rol"] else None,
+        is_active=row["is_active"],
+        created_at=row["created_at"],
+        last_login_at=row["last_login_at"]
+    )
 
 @router.patch("/email", response_model=UserResponse)
 async def update_my_email(
@@ -34,12 +98,26 @@ async def update_my_email(
                 detail="El correo electrónico ya está registrado por otro usuario."
             )
 
-        row = await conn.fetchrow("""
+        await conn.execute("""
             UPDATE users 
             SET email = $1, updated_at = NOW() 
             WHERE id = $2
-            RETURNING id, username, email, role, is_active, created_at, last_login_at
         """, new_email, user_uuid)
+
+        row = await conn.fetchrow("""
+            SELECT 
+                u.id, 
+                u.username, 
+                u.email, 
+                COALESCE(r.descripcion, 'cartografo') as role, 
+                u.id_cat_rol,
+                u.is_active, 
+                u.created_at, 
+                u.last_login_at 
+            FROM users u
+            LEFT JOIN cat_roles r ON u.id_cat_rol = r.id
+            WHERE u.id = $1
+        """, user_uuid)
 
     await registrar_auditoria(
         pool=pool,
@@ -54,7 +132,8 @@ async def update_my_email(
         id=str(row["id"]),
         username=row["username"],
         email=row["email"],
-        role=RoleEnum(row["role"]),
+        role=row["role"],
+        id_cat_rol=str(row["id_cat_rol"]) if row["id_cat_rol"] else None,
         is_active=row["is_active"],
         created_at=row["created_at"],
         last_login_at=row["last_login_at"]
@@ -69,7 +148,7 @@ async def update_my_password(
     """
     Cambio de contraseña propio.
     Requiere password actual, nueva password y confirmación.
-    Valida longitud mínima >= 5 caracteres.
+    Valida longitud mínima >= 6 caracteres.
     """
     if payload.new_password != payload.confirm_password:
         raise HTTPException(

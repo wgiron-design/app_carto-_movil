@@ -16,7 +16,7 @@ class RoleEnum(str, Enum):
 class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, description="Nombre de usuario único")
     email: EmailStr = Field(..., description="Correo electrónico válido")
-    password: str = Field(..., min_length=7, description="Contraseña con mínimo 7 caracteres")
+    password: str = Field(..., min_length=5, description="Contraseña con mínimo 5 caracteres")
 
     @field_validator("username")
     @classmethod
@@ -36,7 +36,7 @@ class ForgotPasswordRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     token: str = Field(..., description="Token de recuperación enviado por correo")
-    new_password: str = Field(..., min_length=7, description="Nueva contraseña con mínimo 7 caracteres")
+    new_password: str = Field(..., min_length=5, description="Nueva contraseña con mínimo 5 caracteres")
 
 class UserUpdateStatus(BaseModel):
     is_active: Optional[bool] = None
