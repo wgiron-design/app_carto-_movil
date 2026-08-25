@@ -462,7 +462,7 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ),
 
-              // ── Panel flotante para Editar Posición de Punto (Drag) ──────────
+              // ── Panel flotante para Editar Posición de Punto (Drag / Tap) ──────────
               if (digCtrl.modo == ModoDigitalizacion.editarPunto)
                 Positioned(
                   bottom: 48,
@@ -470,14 +470,11 @@ class _MapScreenState extends State<MapScreen> {
                   child: PanelEdicionPunto(
                     digCtrl: digCtrl,
                     onFinalizar: () {
-                      if (digCtrl.posicionDragPuntoTemporal != null) {
-                        digCtrl.confirmarDragPunto(digCtrl.posicionDragPuntoTemporal!);
-                      } else {
-                        digCtrl.cancelarDragPunto();
-                      }
+                      final pos = digCtrl.posicionDragPuntoTemporal ?? _flutterMapCtrl.camera.center;
+                      digCtrl.confirmarDragPunto(pos);
                     },
                     onCancelar: () {
-                      digCtrl.cancelarDragPunto();
+                      digCtrl.cancelarEdicionPunto();
                     },
                   ),
                 ),
@@ -609,12 +606,19 @@ class _MapScreenState extends State<MapScreen> {
             }
           }
 
+          // ── Modo Editar Punto: actualizar posición del punto al lugar tocado ──
+          if (digCtrl.modo == ModoDigitalizacion.editarPunto) {
+            digCtrl.actualizarDragPunto(point);
+            return;
+          }
+
           // En modo línea/polígono/edición con vértices o en edición activa los taps se manejan por sus herramientas/paneles
           if (digCtrl.modo == ModoDigitalizacion.linea || 
               digCtrl.modo == ModoDigitalizacion.poligono ||
               digCtrl.modo == ModoDigitalizacion.cortarLinea || 
               digCtrl.modo == ModoDigitalizacion.editarLinea ||
-              digCtrl.modo == ModoDigitalizacion.editarPoligono) {
+              digCtrl.modo == ModoDigitalizacion.editarPoligono ||
+              digCtrl.modo == ModoDigitalizacion.editarPunto) {
             return;
           }
               
@@ -737,15 +741,10 @@ class _MapScreenState extends State<MapScreen> {
                       digCtrl.actualizarDragPunto(newPos);
                     },
                     onPanEnd: (details) {
-                      if (digCtrl.posicionDragPuntoTemporal != null) {
-                        digCtrl.confirmarDragPunto(digCtrl.posicionDragPuntoTemporal!);
-                      } else {
-                        digCtrl.cancelarDragPunto();
-                      }
+                      // El marcador queda en la nueva posición visual
+                      // El usuario puede seguir arrastrando o pulsar "Confirmar Posición".
                     },
-                    onPanCancel: () {
-                      digCtrl.cancelarDragPunto();
-                    },
+                    onPanCancel: () {},
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       decoration: BoxDecoration(
@@ -1408,8 +1407,17 @@ class _MapScreenState extends State<MapScreen> {
                           return;
                         }
                         Navigator.pop(innerCtx);
-                        digCtrl.seleccionar(punto.id);
-                        digCtrl.setModo(ModoDigitalizacion.editarPunto);
+                        digCtrl.iniciarEdicionPunto(punto.id);
+                        ScaffoldMessenger.of(mapCtx).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              '📍 Moviendo "${punto.nombre.isEmpty ? "Estructura" : punto.nombre}". '
+                              'Arrastra el marcador o toca en el mapa para reubicarlo.',
+                            ),
+                            backgroundColor: const Color(0xFF4FC3F7),
+                            duration: const Duration(seconds: 3),
+                          ),
+                        );
                       },
                     ),
                     const SizedBox(height: 10),

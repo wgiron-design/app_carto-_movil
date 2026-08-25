@@ -345,6 +345,10 @@ class PanelEdicionPunto extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enDrag = digCtrl.dragPuntoActivo;
+    final punto = digCtrl.idSeleccionado != null
+        ? digCtrl.puntos.where((p) => p.id == digCtrl.idSeleccionado).firstOrNull
+        : null;
+    final nombre = (punto?.nombre.isNotEmpty == true) ? punto!.nombre : 'Estructura';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -367,13 +371,19 @@ class PanelEdicionPunto extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            enDrag
-                ? 'Moviendo punto...'
-                : 'Arrastra el punto para moverlo',
+            enDrag ? 'Moviendo "$nombre"...' : 'Mover "$nombre"',
             style: const TextStyle(
               color: Color(0xFF4FC3F7),
               fontSize: 13,
               fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Arrastra el punto o toca en el mapa la nueva ubicación',
+            style: TextStyle(
+              color: Color(0xFF90A4AE),
+              fontSize: 11,
             ),
           ),
           const SizedBox(height: 10),

@@ -1384,6 +1384,18 @@ class DigitalizacionController extends ChangeNotifier {
 
   // ── Drag Directo de Punto ───────────────────────────────────────────────
 
+  void iniciarEdicionPunto(String puntoId) {
+    final index = puntos.indexWhere((p) => p.id == puntoId);
+    if (index == -1) return;
+
+    _idSeleccionado = puntoId;
+    _posicionOriginalPunto = puntos[index].coordenadas;
+    _posicionDragPuntoTemporal = puntos[index].coordenadas;
+    _dragPuntoActivo = false;
+    _modo = ModoDigitalizacion.editarPunto;
+    notifyListeners();
+  }
+
   void iniciarDragPunto(String puntoId) {
     final index = puntos.indexWhere((p) => p.id == puntoId);
     if (index == -1) return;
@@ -1397,7 +1409,6 @@ class DigitalizacionController extends ChangeNotifier {
   }
 
   void actualizarDragPunto(LatLng nuevaPos) {
-    if (!_dragPuntoActivo) return;
     _posicionDragPuntoTemporal = nuevaPos;
     notifyListeners();
   }
@@ -1413,6 +1424,8 @@ class DigitalizacionController extends ChangeNotifier {
         nombre: original.nombre,
         idCategoria: original.idCategoria,
         idTipo: original.idTipo,
+        nombreCategoria: original.nombreCategoria,
+        nombreTipo: original.nombreTipo,
         estado: original.estado,
         nivelesCantidad: original.nivelesCantidad,
         notas: original.notas,
