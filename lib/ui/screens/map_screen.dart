@@ -776,7 +776,7 @@ class _MapScreenState extends State<MapScreen> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: seleccionado
-                          ? const Color(0xFF4FC3F7).withOpacity(0.9)
+                          ? const Color(0xFFFFD600).withOpacity(0.95)
                           : const Color(0xFF4FC3F7).withOpacity(0.85),
                       border: Border.all(
                         color: Colors.white,
@@ -784,8 +784,11 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF4FC3F7).withOpacity(0.5),
-                          blurRadius: seleccionado ? 12 : 6,
+                          color: (seleccionado
+                                  ? const Color(0xFFFFD600)
+                                  : const Color(0xFF4FC3F7))
+                              .withOpacity(0.6),
+                          blurRadius: seleccionado ? 14 : 6,
                         ),
                       ],
                     ),
@@ -835,10 +838,10 @@ class _MapScreenState extends State<MapScreen> {
         return Polygon(
           points: poligono.vertices,
           color: seleccionado
-              ? const Color(0xFFA5D6A7).withOpacity(0.35)
+              ? const Color(0xFFFFD600).withOpacity(0.2)
               : const Color(0xFFA5D6A7).withOpacity(0.2),
           borderColor: seleccionado
-              ? const Color(0xFF66BB6A)
+              ? const Color(0xFFFFD600)
               : const Color(0xFFA5D6A7),
           borderStrokeWidth: seleccionado ? 3.0 : 1.5,
           label: poligono.codigoUPM.isNotEmpty
@@ -1248,6 +1251,8 @@ class _MapScreenState extends State<MapScreen> {
 
   void _mostrarInfoPunto(BuildContext context, PuntoEstructura punto,
       DigitalizacionController digCtrl) {
+    // Capturar el contexto del mapa antes del BottomSheet para navegación posterior segura (T4)
+    final mapCtx = context;
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.surface,
@@ -1371,11 +1376,11 @@ class _MapScreenState extends State<MapScreen> {
 
             // ── BOTONES DE ACCIÓN PARA EL PUNTO SELECCIONADO ────────────────
             if (digCtrl.modoEdicion) ...[
-              Builder(builder: (context) {
-                final auth = Provider.of<AuthController>(context, listen: false);
+              Builder(builder: (innerCtx) {
+                final auth = Provider.of<AuthController>(innerCtx, listen: false);
                 final esPropietario = digCtrl.esPropietario(punto.createdBy, auth.currentUserId);
                 void mostrarMensajeNoPropietario() {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  ScaffoldMessenger.of(innerCtx).showSnackBar(
                     const SnackBar(
                       content: Text('Ud. no creo este elemento, no tiene permisos de edición'),
                       backgroundColor: AppTheme.warning,
@@ -1384,78 +1389,105 @@ class _MapScreenState extends State<MapScreen> {
                   );
                 }
 
-                return SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.edit_outlined, size: 16),
-                    label: const Text('Editar', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: esPropietario ? const Color(0xFFFFB74D) : Colors.grey,
-                      side: BorderSide(color: esPropietario ? const Color(0xFFFFB74D) : Colors.grey),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // ── Botón: Mover Punto (T3) ─────────────────────────────
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.open_with, size: 18, color: Colors.white),
+                      label: const Text('Mover Punto', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: esPropietario ? const Color(0xFF4FC3F7) : Colors.grey.shade700,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () {
+                        if (!esPropietario) {
+                          mostrarMensajeNoPropietario();
+                          return;
+                        }
+                        Navigator.pop(innerCtx);
+                        digCtrl.seleccionar(punto.id);
+                        digCtrl.setModo(ModoDigitalizacion.editarPunto);
+                      },
                     ),
-                    onPressed: () async {
-                      if (!esPropietario) {
-                        mostrarMensajeNoPropietario();
-                        return;
-                      }
-                      Navigator.pop(context);
-                      final result = await showDialog<AtributosPuntoResult>(
-                        context: context,
-                        builder: (_) => DialogoAtributosPunto(
-                          lat: punto.coordenadas.latitude,
-                          lng: punto.coordenadas.longitude,
-                          baseUrl: PostGISService().baseUrl,
-                          tipos: _tiposCatalogo,
-                          nombreInicial: punto.nombre,
-                          idCategoriaInicial: punto.idCategoria,
-                          idTipoInicial: punto.idTipo,
-                          estadoInicial: punto.estado,
-                          nivelesInicial: punto.nivelesCantidad,
-                          notasIniciales: punto.notas,
-                          soloLectura: !esPropietario,
-                          onAbrirNiveles: () async {
-                            Navigator.pop(context);
-                            await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => NivelListaScreen(puntoEstructura: punto),
-                              ),
-                            );
-                          },
-                        ),
-                      );
-                      if (result != null && mounted && esPropietario) {
-                        final puntoEditado = PuntoEstructura(
-                          id: punto.id,
-                          coordenadas: punto.coordenadas,
-                          nombre: result.nombre,
-                          idCategoria: result.idCategoria,
-                          idTipo: result.idTipo,
-                          estado: result.estado,
-                          nivelesCantidad: result.nivelesCantidad,
-                          notas: result.notas,
-                          niveles: punto.niveles,
-                          fechaCreacion: punto.fechaCreacion,
-                          updatedAt: DateTime.now(),
-                          syncDirty: true,
-                          createdBy: punto.createdBy,
-                          updatedBy: auth.currentUserId,
-                          deviceId: punto.deviceId,
-                          syncVersion: punto.syncVersion,
-                        );
-                        await digCtrl.actualizarPunto(puntoEditado);
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('✅ Estructura "${result.nombre}" actualizada.'),
-                            backgroundColor: AppTheme.success,
+                    const SizedBox(height: 10),
+                    // ── Botón: Editar Atributos ─────────────────────────────
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.edit_outlined, size: 16),
+                      label: const Text('Editar Atributos', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: esPropietario ? const Color(0xFFFFB74D) : Colors.grey,
+                        side: BorderSide(color: esPropietario ? const Color(0xFFFFB74D) : Colors.grey),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () async {
+                        if (!esPropietario) {
+                          mostrarMensajeNoPropietario();
+                          return;
+                        }
+                        Navigator.pop(innerCtx);
+                        if (!mapCtx.mounted) return;
+                        final result = await showDialog<AtributosPuntoResult>(
+                          context: mapCtx,
+                          builder: (_) => DialogoAtributosPunto(
+                            lat: punto.coordenadas.latitude,
+                            lng: punto.coordenadas.longitude,
+                            baseUrl: PostGISService().baseUrl,
+                            tipos: _tiposCatalogo,
+                            nombreInicial: punto.nombre,
+                            idCategoriaInicial: punto.idCategoria,
+                            idTipoInicial: punto.idTipo,
+                            estadoInicial: punto.estado,
+                            nivelesInicial: punto.nivelesCantidad,
+                            notasIniciales: punto.notas,
+                            soloLectura: !esPropietario,
+                            onAbrirNiveles: () async {
+                              // T4: usar mapCtx (contexto del MapScreen) para evitar
+                              // NavigatorState inválido tras cerrar el BottomSheet
+                              Navigator.pop(mapCtx);
+                              if (!mapCtx.mounted) return;
+                              await Navigator.push(
+                                mapCtx,
+                                MaterialPageRoute(
+                                  builder: (_) => NivelListaScreen(puntoEstructura: punto),
+                                ),
+                              );
+                            },
                           ),
                         );
-                      }
-                    },
-                  ),
+                        if (result != null && mounted && esPropietario) {
+                          final puntoEditado = PuntoEstructura(
+                            id: punto.id,
+                            coordenadas: punto.coordenadas,
+                            nombre: result.nombre,
+                            idCategoria: result.idCategoria,
+                            idTipo: result.idTipo,
+                            estado: result.estado,
+                            nivelesCantidad: result.nivelesCantidad,
+                            notas: result.notas,
+                            niveles: punto.niveles,
+                            fechaCreacion: punto.fechaCreacion,
+                            updatedAt: DateTime.now(),
+                            syncDirty: true,
+                            createdBy: punto.createdBy,
+                            updatedBy: auth.currentUserId,
+                            deviceId: punto.deviceId,
+                            syncVersion: punto.syncVersion,
+                          );
+                          await digCtrl.actualizarPunto(puntoEditado);
+                          if (!mapCtx.mounted) return;
+                          ScaffoldMessenger.of(mapCtx).showSnackBar(
+                            SnackBar(
+                              content: Text('✅ Estructura "${result.nombre}" actualizada.'),
+                              backgroundColor: AppTheme.success,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ],
                 );
               }),
             ] else ...[
