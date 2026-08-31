@@ -79,6 +79,7 @@ class PuntoEstructura {
   final String nombre;
   final int idCategoria;
   final int idTipo;
+  final int? idEstructuraUser;
   final String? nombreCategoria;
   final String? nombreTipo;
   final EstadoEstructura estado;
@@ -107,6 +108,7 @@ class PuntoEstructura {
     required this.nombre,
     required this.idCategoria,
     required this.idTipo,
+    this.idEstructuraUser,
     this.nombreCategoria,
     this.nombreTipo,
     this.estado = EstadoEstructura.presente,
@@ -130,6 +132,7 @@ class PuntoEstructura {
     required String nombre,
     required int idCategoria,
     required int idTipo,
+    int? idEstructuraUser,
     String? nombreCategoria,
     String? nombreTipo,
     EstadoEstructura estado = EstadoEstructura.presente,
@@ -144,6 +147,7 @@ class PuntoEstructura {
       nombre: nombre,
       idCategoria: idCategoria,
       idTipo: idTipo,
+      idEstructuraUser: idEstructuraUser,
       nombreCategoria: nombreCategoria,
       nombreTipo: nombreTipo,
       estado: estado,
@@ -176,6 +180,7 @@ class PuntoEstructura {
       'notas': notas,
       'id_categoria': idCategoria,
       'id_tipo': idTipo,
+      'id_estructura_user': idEstructuraUser,
       'estado': estado.name,
       'niveles_cantidad': nivelesCantidad,
       'updated_at': updatedAt.toIso8601String(),
@@ -201,6 +206,7 @@ class PuntoEstructura {
         'nombre': nombre,
         'id_categoria': idCategoria,
         'id_tipo': idTipo,
+        'id_estructura_user': idEstructuraUser,
         'nombre_categoria': nombreCategoria,
         'nombre_tipo': nombreTipo,
         'estado': estado.name,
@@ -227,6 +233,7 @@ class PuntoEstructura {
       nombre: json['nombre'] as String,
       idCategoria: (json['id_categoria'] as num?)?.toInt() ?? 1,
       idTipo: (json['id_tipo'] as num?)?.toInt() ?? 1,
+      idEstructuraUser: (json['id_estructura_user'] as num?)?.toInt(),
       nombreCategoria: json['nombre_categoria'] as String?,
       nombreTipo: json['nombre_tipo'] as String?,
       estado: EstadoEstructura.values.firstWhere(
@@ -260,6 +267,7 @@ class PuntoEstructura {
           'nombre': nombre,
           'id_categoria': idCategoria,
           'id_tipo': idTipo,
+          'id_estructura_user': idEstructuraUser,
           'estado': estado.name,
           'niveles_cantidad': nivelesCantidad,
           'notas': notas,
@@ -280,6 +288,7 @@ class PuntoEstructura {
       nombre: props['nombre'] as String? ?? '',
       idCategoria: (props['id_categoria'] as num?)?.toInt() ?? 1,
       idTipo: (props['id_tipo'] as num?)?.toInt() ?? 1,
+      idEstructuraUser: (props['id_estructura_user'] as num?)?.toInt(),
       nombreCategoria: props['nombre_categoria'] as String?,
       nombreTipo: props['nombre_tipo'] as String?,
       estado: EstadoEstructura.values.firstWhere(
@@ -302,6 +311,7 @@ class PuntoEstructura {
     String? nombre,
     int? idCategoria,
     int? idTipo,
+    int? idEstructuraUser,
     String? nombreCategoria,
     String? nombreTipo,
     EstadoEstructura? estado,
@@ -316,6 +326,7 @@ class PuntoEstructura {
         nombre: nombre ?? this.nombre,
         idCategoria: idCategoria ?? this.idCategoria,
         idTipo: idTipo ?? this.idTipo,
+        idEstructuraUser: idEstructuraUser ?? this.idEstructuraUser,
         nombreCategoria: nombreCategoria ?? this.nombreCategoria,
         nombreTipo: nombreTipo ?? this.nombreTipo,
         estado: estado ?? this.estado,

@@ -32,9 +32,19 @@ async def get_admin_stats(
     async with pool.acquire() as conn:
         total_users = await conn.fetchval("SELECT COUNT(*) FROM users")
         active_users = await conn.fetchval("SELECT COUNT(*) FROM users WHERE is_active = true")
-        total_upms = await conn.fetchval("SELECT COUNT(*) FROM upms")
-        upms_assigned_sup = await conn.fetchval("SELECT COUNT(*) FROM asignacion_upms_supervisor")
-        upms_assigned_cart = await conn.fetchval("SELECT COUNT(DISTINCT id_upm) FROM asignacion_upms_cartografo")
+        total_upms = await conn.fetchval("SELECT COUNT(*) FROM upms WHERE deleted_at IS NULL")
+        upms_assigned_sup = await conn.fetchval("""
+            SELECT COUNT(DISTINCT au.id_upm) 
+            FROM asignacion_upms au
+            JOIN upms u ON au.id_upm = u.id AND u.deleted_at IS NULL
+            WHERE au.rol_asignacion = 'supervisor'
+        """)
+        upms_assigned_cart = await conn.fetchval("""
+            SELECT COUNT(DISTINCT au.id_upm) 
+            FROM asignacion_upms au
+            JOIN upms u ON au.id_upm = u.id AND u.deleted_at IS NULL
+            WHERE au.rol_asignacion = 'cartografo'
+        """)
         total_audits = await conn.fetchval("SELECT COUNT(*) FROM audit_log")
 
         roles_distribution = await conn.fetch("""

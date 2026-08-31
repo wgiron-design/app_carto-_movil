@@ -85,7 +85,7 @@ async def get_current_active_user(
                 COALESCE(r.descripcion, 'cartografo') as role,
                 u.id_cat_rol,
                 u.is_active, 
-                u.id_supervisor, 
+                u.id_jefe, 
                 u.created_at, 
                 u.last_login_at
             FROM users u
@@ -102,7 +102,9 @@ async def get_current_active_user(
                 detail="usuario inactivo"
             )
 
-        return dict(row)
+        user_dict = dict(row)
+        user_dict["id_supervisor"] = user_dict.get("id_jefe")
+        return user_dict
 
 def require_role(allowed_roles: List[str]):
     """

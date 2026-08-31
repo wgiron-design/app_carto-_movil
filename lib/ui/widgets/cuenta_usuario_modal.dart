@@ -236,18 +236,32 @@ class _CuentaUsuarioModalState extends State<CuentaUsuarioModal> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // ── Handle superior ──────────────────────────────────
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF455A64),
-                    borderRadius: BorderRadius.circular(2),
+              // ── Handle superior y botón de cierre ─────────────────
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF455A64),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      icon: const Icon(Icons.close, color: Color(0xFF90A4AE), size: 20),
+                      tooltip: 'Salir del formulario',
+                      splashRadius: 18,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ),
+                ],
               ),
+              const SizedBox(height: 12),
 
               // ── Header con Avatar y Rol ──────────────────────────
               Center(
@@ -437,6 +451,34 @@ class _CuentaUsuarioModalState extends State<CuentaUsuarioModal> {
                     style: TextStyle(color: Color(0xFF90A4AE), fontSize: 12),
                   ),
                   onTap: _confirmarCerrarSesion,
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // ── Botón: Salir del Formulario ──────────────────────
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.onSurface,
+                    side: const BorderSide(color: Color(0xFF455A64), width: 1.2),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    backgroundColor: AppTheme.surfaceVariant.withValues(alpha: 0.3),
+                  ),
+                  icon: const Icon(Icons.arrow_back, size: 18, color: Color(0xFF90A4AE)),
+                  label: const Text(
+                    'Salir del Formulario',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.onSurface,
+                    ),
+                  ),
+                  onPressed: () => Navigator.of(context).pop(),
                 ),
               ),
             ],

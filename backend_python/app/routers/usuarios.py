@@ -70,13 +70,13 @@ async def list_users(
                 COALESCE(r.descripcion, 'cartografo') as role, 
                 u.id_cat_rol,
                 u.is_active, 
-                u.id_supervisor, 
-                sup.username as supervisor_username,
+                u.id_jefe, 
+                jefe.username as jefe_username,
                 u.created_at, 
                 u.last_login_at
             FROM users u
             LEFT JOIN cat_roles r ON u.id_cat_rol = r.id
-            LEFT JOIN users sup ON u.id_supervisor = sup.id
+            LEFT JOIN users jefe ON u.id_jefe = jefe.id
             {where_clause}
             ORDER BY u.created_at DESC
             LIMIT ${idx} OFFSET ${idx + 1}
@@ -91,8 +91,8 @@ async def list_users(
             role=r["role"],
             id_cat_rol=str(r["id_cat_rol"]) if r["id_cat_rol"] else None,
             is_active=r["is_active"],
-            id_supervisor=str(r["id_supervisor"]) if r["id_supervisor"] else None,
-            supervisor_username=r["supervisor_username"],
+            id_jefe=str(r["id_jefe"]) if r["id_jefe"] else None,
+            jefe_username=r["jefe_username"],
             created_at=r["created_at"],
             last_login_at=r["last_login_at"]
         )
@@ -145,28 +145,28 @@ async def create_user(
                 # Fallback al primer rol o cartógrafo
                 role_uuid = await conn.fetchval("SELECT id FROM cat_roles LIMIT 1")
 
-        supervisor_uuid = None
-        if payload.id_supervisor:
+        jefe_uuid = None
+        if payload.id_jefe:
             try:
-                supervisor_uuid = uuid.UUID(payload.id_supervisor)
-                sup = await conn.fetchrow("SELECT id FROM users WHERE id = $1 AND is_active = true", supervisor_uuid)
-                if not sup:
-                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El supervisor especificado no existe o está inactivo.")
+                jefe_uuid = uuid.UUID(payload.id_jefe)
+                jefe = await conn.fetchrow("SELECT id FROM users WHERE id = $1 AND is_active = true", jefe_uuid)
+                if not jefe:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El jefe especificado no existe o está inactivo.")
             except ValueError:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ID de supervisor inválido.")
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ID de jefe inválido.")
 
         pwd_hash = hash_password(payload.password)
 
         row = await conn.fetchrow("""
-            INSERT INTO users (username, email, password_hash, id_cat_rol, id_supervisor, is_active)
+            INSERT INTO users (username, email, password_hash, id_cat_rol, id_jefe, is_active)
             VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id, username, email, id_cat_rol, is_active, id_supervisor, created_at, last_login_at
-        """, payload.username, payload.email, pwd_hash, role_uuid, supervisor_uuid, payload.is_active)
+            RETURNING id, username, email, id_cat_rol, is_active, id_jefe, created_at, last_login_at
+        """, payload.username, payload.email, pwd_hash, role_uuid, jefe_uuid, payload.is_active)
 
         role_desc = await conn.fetchval("SELECT descripcion FROM cat_roles WHERE id = $1", row["id_cat_rol"])
-        sup_username = None
-        if supervisor_uuid:
-            sup_username = await conn.fetchval("SELECT username FROM users WHERE id = $1", supervisor_uuid)
+        jefe_username = None
+        if jefe_uuid:
+            jefe_username = await conn.fetchval("SELECT username FROM users WHERE id = $1", jefe_uuid)
 
     await registrar_auditoria(
         pool=pool,
@@ -184,8 +184,8 @@ async def create_user(
         role=role_desc or 'cartografo',
         id_cat_rol=str(row["id_cat_rol"]) if row["id_cat_rol"] else None,
         is_active=row["is_active"],
-        id_supervisor=str(row["id_supervisor"]) if row["id_supervisor"] else None,
-        supervisor_username=sup_username,
+        id_jefe=str(row["id_jefe"]) if row["id_jefe"] else None,
+        jefe_username=jefe_username,
         created_at=row["created_at"],
         last_login_at=row["last_login_at"]
     )
@@ -251,19 +251,19 @@ async def update_user(
                 args.append(role_row["id"])
                 idx += 1
 
-        if payload.id_supervisor is not None:
-            if payload.id_supervisor == "":
-                updates.append("id_supervisor = NULL")
+        if payload.id_jefe is not None:
+            if payload.id_jefe == "":
+                updates.append("id_jefe = NULL")
             else:
                 try:
-                    sup_uuid = uuid.UUID(payload.id_supervisor)
-                    if sup_uuid == target_uuid:
-                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Un usuario no puede ser su propio supervisor.")
-                    updates.append(f"id_supervisor = ${idx}")
-                    args.append(sup_uuid)
+                    jefe_uuid = uuid.UUID(payload.id_jefe)
+                    if jefe_uuid == target_uuid:
+                        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Un usuario no puede ser su propio jefe.")
+                    updates.append(f"id_jefe = ${idx}")
+                    args.append(jefe_uuid)
                     idx += 1
                 except ValueError:
-                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ID de supervisor inválido.")
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ID de jefe inválido.")
 
         if payload.is_active is not None:
             updates.append(f"is_active = ${idx}")
@@ -286,14 +286,14 @@ async def update_user(
             UPDATE users
             SET {', '.join(updates)}
             WHERE id = ${idx}
-            RETURNING id, username, email, id_cat_rol, is_active, id_supervisor, created_at, last_login_at
+            RETURNING id, username, email, id_cat_rol, is_active, id_jefe, created_at, last_login_at
         """
         row = await conn.fetchrow(sql, *args)
 
         role_desc = await conn.fetchval("SELECT descripcion FROM cat_roles WHERE id = $1", row["id_cat_rol"])
-        sup_username = None
-        if row["id_supervisor"]:
-            sup_username = await conn.fetchval("SELECT username FROM users WHERE id = $1", row["id_supervisor"])
+        jefe_username = None
+        if row["id_jefe"]:
+            jefe_username = await conn.fetchval("SELECT username FROM users WHERE id = $1", row["id_jefe"])
 
     await registrar_auditoria(
         pool=pool,
@@ -311,8 +311,8 @@ async def update_user(
         role=role_desc or 'cartografo',
         id_cat_rol=str(row["id_cat_rol"]) if row["id_cat_rol"] else None,
         is_active=row["is_active"],
-        id_supervisor=str(row["id_supervisor"]) if row["id_supervisor"] else None,
-        supervisor_username=sup_username,
+        id_jefe=str(row["id_jefe"]) if row["id_jefe"] else None,
+        jefe_username=jefe_username,
         created_at=row["created_at"],
         last_login_at=row["last_login_at"]
     )

@@ -42,7 +42,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       dbPath,
-      version: 9,
+      version: 10,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onConfigure: _onConfigure,
@@ -263,6 +263,14 @@ class DatabaseHelper {
       // Agregar columna tipo a cat_estructuras_categoria si no existe
       try { await db.execute('ALTER TABLE cat_estructuras_categoria ADD COLUMN tipo INTEGER'); } catch (_) {}
     }
+    if (oldVersion < 10) {
+      try {
+        await db.execute('ALTER TABLE estructuras ADD COLUMN id_estructura_user INTEGER');
+      } catch (_) {}
+      try {
+        await db.execute('CREATE INDEX IF NOT EXISTS idx_estructuras_id_user ON estructuras (id_estructura_user)');
+      } catch (_) {}
+    }
   }
 
   Future<void> _onConfigure(Database db) async {
@@ -348,6 +356,7 @@ class DatabaseHelper {
         notas TEXT,
         id_categoria INTEGER NOT NULL DEFAULT 1,
         id_tipo INTEGER NOT NULL DEFAULT 1,
+        id_estructura_user INTEGER,
         estado TEXT,
         niveles_cantidad INTEGER,
         updated_at TEXT,
@@ -658,6 +667,7 @@ class DatabaseHelper {
         nombre: estMap['nombre'] as String? ?? '',
         idCategoria: (estMap['id_categoria'] as num?)?.toInt() ?? 1,
         idTipo: (estMap['id_tipo'] as num?)?.toInt() ?? 1,
+        idEstructuraUser: (estMap['id_estructura_user'] as num?)?.toInt(),
         nombreCategoria: estMap['nombre_categoria'] as String?,
         nombreTipo: estMap['nombre_tipo'] as String?,
         estado: EstadoEstructura.values.firstWhere(

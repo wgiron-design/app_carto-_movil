@@ -1022,7 +1022,7 @@ class DigitalizacionController extends ChangeNotifier {
     return true;
   }
 
-  void confirmarEdicionPoligono() {
+  void confirmarEdicionPoligono({String? updatedBy}) {
     if (_idPoligonoEditando == null) return;
     final index = poligonos.indexWhere((p) => p.id == _idPoligonoEditando);
     if (index == -1) return;
@@ -1038,7 +1038,7 @@ class DigitalizacionController extends ChangeNotifier {
       updatedAt: DateTime.now(),
       syncDirty: true,
       createdBy: original.createdBy,
-      updatedBy: original.updatedBy,
+      updatedBy: updatedBy ?? original.updatedBy,
       deviceId: original.deviceId,
       syncVersion: original.syncVersion,
     );
@@ -1177,7 +1177,7 @@ class DigitalizacionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void actualizarAtributosPoligonoSeleccionado(String nombre, String codigoUPM) {
+  void actualizarAtributosPoligonoSeleccionado(String nombre, String codigoUPM, {String? updatedBy}) {
     if (_idSeleccionado == null) return;
     final index = poligonos.indexWhere((p) => p.id == _idSeleccionado);
     if (index == -1) return;
@@ -1193,7 +1193,7 @@ class DigitalizacionController extends ChangeNotifier {
       updatedAt: DateTime.now(),
       syncDirty: true,
       createdBy: original.createdBy,
-      updatedBy: original.updatedBy,
+      updatedBy: updatedBy ?? original.updatedBy,
       deviceId: original.deviceId,
       syncVersion: original.syncVersion,
     );
@@ -1247,7 +1247,7 @@ class DigitalizacionController extends ChangeNotifier {
     return distCalc.distance(p, proj);
   }
 
-  void actualizarAtributosLineaSeleccionada(String descripcion, TipoCamino tipo) {
+  void actualizarAtributosLineaSeleccionada(String descripcion, TipoCamino tipo, {String? updatedBy}) {
     if (_idSeleccionado == null) return;
     final index = lineas.indexWhere((l) => l.id == _idSeleccionado);
     if (index == -1) return;
@@ -1263,7 +1263,7 @@ class DigitalizacionController extends ChangeNotifier {
       updatedAt: DateTime.now(),
       syncDirty: true,
       createdBy: original.createdBy,
-      updatedBy: original.updatedBy,
+      updatedBy: updatedBy ?? original.updatedBy,
       deviceId: original.deviceId,
       syncVersion: original.syncVersion,
     );
@@ -1413,7 +1413,7 @@ class DigitalizacionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void confirmarDragPunto(LatLng posicionFinal) {
+  void confirmarDragPunto(LatLng posicionFinal, {String? updatedBy}) {
     if (_idSeleccionado == null) return;
     final index = puntos.indexWhere((p) => p.id == _idSeleccionado);
     if (index != -1) {
@@ -1432,7 +1432,7 @@ class DigitalizacionController extends ChangeNotifier {
         niveles: original.niveles,
         fechaCreacion: original.fechaCreacion,
         createdBy: original.createdBy,
-        updatedBy: original.updatedBy,
+        updatedBy: updatedBy ?? original.updatedBy,
         deviceId: original.deviceId,
         syncVersion: original.syncVersion,
         updatedAt: DateTime.now(),

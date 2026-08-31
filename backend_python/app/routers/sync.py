@@ -55,18 +55,20 @@ async def batch_sync(payload: SyncBatchPayload):
                 geom_json = json.dumps(geom)
                 id_cat = parse_int_or_none(props.get("id_categoria")) or 1
                 id_tip = parse_int_or_none(props.get("id_tipo")) or 1
+                id_est_user = parse_int_or_none(props.get("id_estructura_user"))
+                created_by_item = parse_uuid_or_none(props.get("created_by")) or valid_user_id
 
                 row = await conn.fetchrow("""
                     INSERT INTO estructuras (
-                        id, geom, nombre, notas, id_categoria, id_tipo,
+                        id, geom, nombre, notas, id_categoria, id_tipo, id_estructura_user,
                         estado, niveles_cantidad,
                         created_by, updated_by, device_id, sync_version,
                         sync_dirty, updated_at
                     )
                     VALUES (
                         COALESCE($1::uuid, uuid_generate_v4()),
-                        ST_GeomFromGeoJSON($2), $3, $4, $5, $6, $7, $8,
-                        $9::uuid, $9::uuid, $10, 0, false, NOW()
+                        ST_GeomFromGeoJSON($2), $3, $4, $5, $6, $7, $8, $9,
+                        $10::uuid, $11::uuid, $12, 0, false, NOW()
                     )
                     ON CONFLICT (id) DO UPDATE SET
                         geom = EXCLUDED.geom,
@@ -74,10 +76,12 @@ async def batch_sync(payload: SyncBatchPayload):
                         notas = EXCLUDED.notas,
                         id_categoria = EXCLUDED.id_categoria,
                         id_tipo = EXCLUDED.id_tipo,
+                        id_estructura_user = EXCLUDED.id_estructura_user,
                         estado = EXCLUDED.estado,
                         niveles_cantidad = EXCLUDED.niveles_cantidad,
-                        updated_by = $9::uuid,
-                        device_id = $10,
+                        created_by = COALESCE(estructuras.created_by, EXCLUDED.created_by),
+                        updated_by = $11::uuid,
+                        device_id = $12,
                         sync_version = estructuras.sync_version + 1,
                         sync_dirty = false,
                         updated_at = NOW(),
@@ -85,9 +89,9 @@ async def batch_sync(payload: SyncBatchPayload):
                     RETURNING id::text, sync_version, updated_at
                 """,
                 fid, geom_json,
-                props.get("nombre"), props.get("notas"), id_cat, id_tip,
+                props.get("nombre"), props.get("notas"), id_cat, id_tip, id_est_user,
                 props.get("estado"), props.get("niveles_cantidad", 1),
-                valid_user_id, device_id)
+                created_by_item, valid_user_id, device_id)
 
                 if row:
                     result["puntos"].append(SyncedItem(
@@ -104,6 +108,8 @@ async def batch_sync(payload: SyncBatchPayload):
                 if not geom:
                     continue
                 geom_json = json.dumps(geom)
+                created_by_item = parse_uuid_or_none(props.get("created_by")) or valid_user_id
+
                 row = await conn.fetchrow("""
                     INSERT INTO caminos (
                         id, geom, nombre, tipo, notas,
@@ -113,15 +119,16 @@ async def batch_sync(payload: SyncBatchPayload):
                     VALUES (
                         COALESCE($1::uuid, uuid_generate_v4()),
                         ST_GeomFromGeoJSON($2), $3, $4, $5,
-                        $6::uuid, $6::uuid, $7, 0, false, NOW()
+                        $6::uuid, $7::uuid, $8, 0, false, NOW()
                     )
                     ON CONFLICT (id) DO UPDATE SET
                         geom = EXCLUDED.geom,
                         nombre = EXCLUDED.nombre,
                         tipo = EXCLUDED.tipo,
                         notas = EXCLUDED.notas,
-                        updated_by = $6::uuid,
-                        device_id = $7,
+                        created_by = COALESCE(caminos.created_by, EXCLUDED.created_by),
+                        updated_by = $7::uuid,
+                        device_id = $8,
                         sync_version = caminos.sync_version + 1,
                         sync_dirty = false,
                         updated_at = NOW(),
@@ -130,7 +137,7 @@ async def batch_sync(payload: SyncBatchPayload):
                 """,
                 fid, geom_json,
                 props.get("nombre"), props.get("tipo"), props.get("notas"),
-                valid_user_id, device_id)
+                created_by_item, valid_user_id, device_id)
 
                 if row:
                     result["lineas"].append(SyncedItem(
@@ -147,6 +154,8 @@ async def batch_sync(payload: SyncBatchPayload):
                 if not geom:
                     continue
                 geom_json = json.dumps(geom)
+                created_by_item = parse_uuid_or_none(props.get("created_by")) or valid_user_id
+
                 row = await conn.fetchrow("""
                     INSERT INTO upms (
                         id, geom, nombre, codigo_upm, notas,
@@ -156,15 +165,16 @@ async def batch_sync(payload: SyncBatchPayload):
                     VALUES (
                         COALESCE($1::uuid, uuid_generate_v4()),
                         ST_GeomFromGeoJSON($2), $3, $4, $5,
-                        $6::uuid, $6::uuid, $7, 0, false, NOW()
+                        $6::uuid, $7::uuid, $8, 0, false, NOW()
                     )
                     ON CONFLICT (id) DO UPDATE SET
                         geom = EXCLUDED.geom,
                         nombre = EXCLUDED.nombre,
                         codigo_upm = EXCLUDED.codigo_upm,
                         notas = EXCLUDED.notas,
-                        updated_by = $6::uuid,
-                        device_id = $7,
+                        created_by = COALESCE(upms.created_by, EXCLUDED.created_by),
+                        updated_by = $7::uuid,
+                        device_id = $8,
                         sync_version = upms.sync_version + 1,
                         sync_dirty = false,
                         updated_at = NOW(),
@@ -173,7 +183,7 @@ async def batch_sync(payload: SyncBatchPayload):
                 """,
                 fid, geom_json,
                 props.get("nombre"), props.get("codigo_upm"), props.get("notas"),
-                valid_user_id, device_id)
+                created_by_item, valid_user_id, device_id)
 
                 if row:
                     result["poligonos"].append(SyncedItem(
@@ -200,6 +210,7 @@ async def batch_sync(payload: SyncBatchPayload):
                             estructura_id = EXCLUDED.estructura_id,
                             numero = EXCLUDED.numero,
                             numero_locales = EXCLUDED.numero_locales,
+                            created_by = COALESCE(niveles.created_by, EXCLUDED.created_by),
                             updated_by = $5::uuid,
                             updated_at = NOW()
                         RETURNING id::text, 1 as sync_version, updated_at;
@@ -215,8 +226,8 @@ async def batch_sync(payload: SyncBatchPayload):
                 id_cond_loc = item.id_condicion_local if item.id_condicion_local in (1, 2, 3, 4, 5) else None
                 if clean_niv_id:
                     row = await conn.fetchrow("""
-                        INSERT INTO locales (id, nivel_id, nombre_local, id_tipo, id_condicion_local, numero_hogares, descripcion, updated_at)
-                        VALUES (COALESCE($1::uuid, uuid_generate_v4()), $2::uuid, $3, $4, $5, $6, $7, NOW())
+                        INSERT INTO locales (id, nivel_id, nombre_local, id_tipo, id_condicion_local, numero_hogares, descripcion, created_by, updated_by, updated_at)
+                        VALUES (COALESCE($1::uuid, uuid_generate_v4()), $2::uuid, $3, $4, $5, $6, $7, $8::uuid, $8::uuid, NOW())
                         ON CONFLICT (id) DO UPDATE SET
                             nivel_id = EXCLUDED.nivel_id,
                             nombre_local = EXCLUDED.nombre_local,
@@ -224,9 +235,11 @@ async def batch_sync(payload: SyncBatchPayload):
                             id_condicion_local = EXCLUDED.id_condicion_local,
                             numero_hogares = EXCLUDED.numero_hogares,
                             descripcion = EXCLUDED.descripcion,
+                            created_by = COALESCE(locales.created_by, EXCLUDED.created_by),
+                            updated_by = $8::uuid,
                             updated_at = NOW()
                         RETURNING id::text, 1 as sync_version, updated_at;
-                    """, clean_id, clean_niv_id, item.nombre_local, id_tipo_loc, id_cond_loc, item.numero_hogares, item.descripcion)
+                    """, clean_id, clean_niv_id, item.nombre_local, id_tipo_loc, id_cond_loc, item.numero_hogares, item.descripcion, valid_user_id)
                     if row:
                         result["locales"].append(SyncedItem(id=row['id'], sync_version=row['sync_version'], updated_at=row['updated_at']))
 
@@ -242,11 +255,11 @@ async def batch_sync(payload: SyncBatchPayload):
                             id, local_id, jefe_familia, id_sexo, id_idioma, direccion, total_habitantes,
                             personas_0_5, personas_6_11, personas_12_17, personas_18_23,
                             personas_24_34, personas_35_44, personas_45_59, personas_60_69,
-                            personas_70_79, personas_80_mas, personas_no_edad, updated_at
+                            personas_70_79, personas_80_mas, personas_no_edad, created_by, updated_by, updated_at
                         )
                         VALUES (
                             COALESCE($1::uuid, uuid_generate_v4()), $2::uuid, $3, $4, $5, $6, $7,
-                            $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW()
+                            $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::uuid, $19::uuid, NOW()
                         )
                         ON CONFLICT (id) DO UPDATE SET
                             local_id = EXCLUDED.local_id,
@@ -266,12 +279,14 @@ async def batch_sync(payload: SyncBatchPayload):
                             personas_70_79 = EXCLUDED.personas_70_79,
                             personas_80_mas = EXCLUDED.personas_80_mas,
                             personas_no_edad = EXCLUDED.personas_no_edad,
+                            created_by = COALESCE(hogares.created_by, EXCLUDED.created_by),
+                            updated_by = $19::uuid,
                             updated_at = NOW()
                         RETURNING id::text, 1 as sync_version, updated_at;
                     """, clean_id, clean_loc_id, item.jefe_familia, id_sexo, id_idioma, item.direccion,
                     item.total_habitantes, item.personas_0_5, item.personas_6_11, item.personas_12_17,
                     item.personas_18_23, item.personas_24_34, item.personas_35_44, item.personas_45_59,
-                    item.personas_60_69, item.personas_70_79, item.personas_80_mas, item.personas_no_edad)
+                    item.personas_60_69, item.personas_70_79, item.personas_80_mas, item.personas_no_edad, valid_user_id)
                     if row:
                         result["hogares"].append(SyncedItem(id=row['id'], sync_version=row['sync_version'], updated_at=row['updated_at']))
 

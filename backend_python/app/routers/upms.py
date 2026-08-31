@@ -32,13 +32,14 @@ async def get_upms_for_supervisores(
     """
     Lista los supervisores disponibles, las UPMs sin asignar a ningún supervisor,
     y las UPMs asignadas al supervisor seleccionado.
+    Consolidado en la tabla asignacion_upms con rol_asignacion = 'supervisor'.
     """
     async with pool.acquire() as conn:
         supervisores_rows = await conn.fetch("""
             SELECT u.id, u.username, u.email, COALESCE(r.descripcion, 'supervisor') as role
             FROM users u
             LEFT JOIN cat_roles r ON u.id_cat_rol = r.id
-            WHERE LOWER(r.descripcion) IN ('supervisor', 'admin', 'administrador') AND u.is_active = true
+            WHERE LOWER(COALESCE(r.descripcion, '')) IN ('supervisor', 'gerente', 'admin', 'administrador') AND u.is_active = true
             ORDER BY u.username ASC
         """)
         supervisores = [
@@ -49,8 +50,8 @@ async def get_upms_for_supervisores(
         upms_disponibles_rows = await conn.fetch("""
             SELECT u.id, u.nombre, u.codigo_upm
             FROM upms u
-            LEFT JOIN asignacion_upms_supervisor aus ON u.id = aus.id_upm
-            WHERE aus.id_upm IS NULL
+            LEFT JOIN asignacion_upms au ON u.id = au.id_upm AND au.rol_asignacion = 'supervisor'
+            WHERE au.id_upm IS NULL AND u.deleted_at IS NULL
             ORDER BY u.nombre ASC
         """)
         upms_disponibles = [
@@ -63,11 +64,19 @@ async def get_upms_for_supervisores(
             try:
                 sup_uuid = uuid.UUID(supervisor_id)
                 upms_asig_rows = await conn.fetch("""
-                    SELECT u.id, u.nombre, u.codigo_upm, s.username as supervisor_username
+                    SELECT 
+                        u.id, 
+                        u.nombre, 
+                        u.codigo_upm, 
+                        s.username as supervisor_username,
+                        au.asignado_por,
+                        ap.username as asignado_por_username,
+                        au.asignado_en
                     FROM upms u
-                    JOIN asignacion_upms_supervisor aus ON u.id = aus.id_upm
-                    JOIN users s ON aus.id_supervisor = s.id
-                    WHERE aus.id_supervisor = $1
+                    JOIN asignacion_upms au ON u.id = au.id_upm AND au.rol_asignacion = 'supervisor'
+                    JOIN users s ON au.id_usuario = s.id
+                    LEFT JOIN users ap ON au.asignado_por = ap.id
+                    WHERE au.id_usuario = $1 AND u.deleted_at IS NULL
                     ORDER BY u.nombre ASC
                 """, sup_uuid)
                 upms_asignadas = [
@@ -76,7 +85,10 @@ async def get_upms_for_supervisores(
                         nombre=r["nombre"] or "Sin nombre",
                         codigo_upm=r["codigo_upm"],
                         id_supervisor=supervisor_id,
-                        supervisor_username=r["supervisor_username"]
+                        supervisor_username=r["supervisor_username"],
+                        asignado_por=str(r["asignado_por"]) if r["asignado_por"] else None,
+                        asignado_por_username=r["asignado_por_username"],
+                        asignado_en=r["asignado_en"]
                     )
                     for r in upms_asig_rows
                 ]
@@ -99,6 +111,11 @@ async def assign_upms_to_supervisor(
     Asigna una lista de UPMs a un supervisor.
     Regla: Cada UPM solo puede pertenecer a 1 único supervisor.
     """
+    if not payload.id_supervisor or not payload.id_supervisor.strip():
+        raise HTTPException(status_code=400, detail="Debe seleccionar un supervisor de destino.")
+    if not payload.upm_ids or len(payload.upm_ids) == 0:
+        raise HTTPException(status_code=400, detail="Debe seleccionar al menos una UPM para asignar.")
+
     try:
         sup_uuid = uuid.UUID(payload.id_supervisor)
         upm_uuids = [uuid.UUID(uid) for uid in payload.upm_ids]
@@ -110,35 +127,27 @@ async def assign_upms_to_supervisor(
         if not sup:
             raise HTTPException(status_code=404, detail="Supervisor no encontrado o inactivo.")
 
-        conflict = await conn.fetch("""
-            SELECT u.nombre, aus.id_supervisor, s.username as current_supervisor
-            FROM asignacion_upms_supervisor aus
-            JOIN upms u ON aus.id_upm = u.id
-            JOIN users s ON aus.id_supervisor = s.id
-            WHERE aus.id_upm = ANY($1::uuid[]) AND aus.id_supervisor != $2
-        """, upm_uuids, sup_uuid)
-
-        if conflict:
-            nombres = ", ".join([f"'{c['nombre']}' (asignada a {c['current_supervisor']})" for c in conflict])
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Las siguientes UPMs ya están asignadas a otro supervisor: {nombres}"
-            )
-
+        actor_uuid = uuid.UUID(str(current_user["id"]))
         for u_id in upm_uuids:
+            # Elimina cualquier asignación previa a otro supervisor para mantener 1 UPM -> 1 Supervisor
             await conn.execute("""
-                INSERT INTO asignacion_upms_supervisor (id_upm, id_supervisor, asignado_por)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (id_upm) DO UPDATE SET id_supervisor = $2, asignado_por = $3, asignado_en = NOW()
-            """, u_id, sup_uuid, uuid.UUID(str(current_user["id"])))
+                DELETE FROM asignacion_upms 
+                WHERE id_upm = $1 AND rol_asignacion = 'supervisor'
+            """, u_id)
+
+            # Inserta la nueva asignación
+            await conn.execute("""
+                INSERT INTO asignacion_upms (id_upm, id_usuario, rol_asignacion, asignado_por, asignado_en)
+                VALUES ($1, $2, 'supervisor', $3, NOW())
+            """, u_id, sup_uuid, actor_uuid)
 
     await registrar_auditoria(
         pool=pool,
         id_actor=str(current_user["id"]),
         accion="ASIGNAR_UPMS_SUPERVISOR",
-        entidad="asignacion_upms_supervisor",
+        entidad="asignacion_upms",
         entidad_id=payload.id_supervisor,
-        detalle={"upm_ids": payload.upm_ids, "supervisor": sup["username"]}
+        detalle={"upm_ids": payload.upm_ids, "supervisor": sup["username"], "rol_asignacion": "supervisor"}
     )
 
     return {"success": True, "message": f"{len(upm_uuids)} UPMs asignadas al supervisor exitosamente."}
@@ -152,6 +161,9 @@ async def unassign_upms_from_supervisor(
     """
     Desasigna una lista de UPMs de sus supervisores actuales.
     """
+    if not payload.upm_ids or len(payload.upm_ids) == 0:
+        raise HTTPException(status_code=400, detail="Debe seleccionar al menos una UPM para desasignar.")
+
     try:
         upm_uuids = [uuid.UUID(uid) for uid in payload.upm_ids]
     except ValueError:
@@ -159,16 +171,16 @@ async def unassign_upms_from_supervisor(
 
     async with pool.acquire() as conn:
         await conn.execute("""
-            DELETE FROM asignacion_upms_supervisor 
-            WHERE id_upm = ANY($1::uuid[])
+            DELETE FROM asignacion_upms 
+            WHERE rol_asignacion = 'supervisor' AND id_upm = ANY($1::uuid[])
         """, upm_uuids)
 
     await registrar_auditoria(
         pool=pool,
         id_actor=str(current_user["id"]),
         accion="DESASIGNAR_UPMS_SUPERVISOR",
-        entidad="asignacion_upms_supervisor",
-        detalle={"upm_ids": payload.upm_ids}
+        entidad="asignacion_upms",
+        detalle={"upm_ids": payload.upm_ids, "rol_asignacion": "supervisor"}
     )
 
     return {"success": True, "message": f"{len(upm_uuids)} UPMs liberadas exitosamente."}
@@ -180,94 +192,180 @@ async def unassign_upms_from_supervisor(
 
 @router.get("/api/v1/upms/cartografos", response_model=AsignacionUpmCartografoResponse)
 async def get_upms_for_cartografos(
+    supervisor_id: Optional[str] = Query(None),
     cartografo_id: Optional[str] = Query(None),
     current_user: Dict[str, Any] = Depends(get_current_active_user),
     pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
-    Lista cartógrafos disponibles y las UPMs asociadas.
-    - Administrador: ve todos los cartógrafos y todas las UPMs.
-    - Supervisor: ve solo los cartógrafos bajo su supervisión directa y las UPMs asignadas a él.
+    Jerarquía operativa: Supervisor -> Cartógrafos asignados -> UPMs del Supervisor.
+    1. Combo Supervisor:
+       - Administradores / Gerentes / Monitores: Ven supervisores disponibles.
+       - Supervisores: Ven su propio perfil preseleccionado.
+    2. Combo Cartógrafos:
+       - Cartógrafos asignados directamente al supervisor seleccionado (u.id_jefe = supervisor_id).
+    3. UPMs Disponibles (Lista izquierda):
+       - UPMs que tiene asignado el supervisor y que no han sido asignados a ningún cartógrafo.
+    4. UPMs Asignadas (Lista derecha):
+       - UPMs asignadas al cartógrafo seleccionado.
     """
     user_role = normalize_role(str(current_user.get("role", "")))
-    if not is_admin(user_role) and user_role != "supervisor":
-        raise HTTPException(status_code=403, detail="Acceso denegado. Se requiere rol administrador o supervisor.")
+    if not is_admin(user_role) and user_role not in ("supervisor", "monitor"):
+        raise HTTPException(status_code=403, detail="Acceso denegado. Se requiere rol administrador, monitor o supervisor.")
 
     user_uuid = uuid.UUID(str(current_user["id"]))
 
     async with pool.acquire() as conn:
+        # 1. Lista de Supervisores
         if is_admin(user_role):
+            sup_rows = await conn.fetch("""
+                SELECT u.id, u.username, u.email, COALESCE(r.descripcion, 'supervisor') as role
+                FROM users u
+                LEFT JOIN cat_roles r ON u.id_cat_rol = r.id
+                WHERE LOWER(COALESCE(r.descripcion, '')) IN ('supervisor', 'administrador', 'admin', 'gerente') 
+                  AND u.is_active = true
+                ORDER BY u.username ASC
+            """)
+        elif user_role == "monitor":
+            sup_rows = await conn.fetch("""
+                SELECT u.id, u.username, u.email, COALESCE(r.descripcion, 'supervisor') as role
+                FROM users u
+                LEFT JOIN cat_roles r ON u.id_cat_rol = r.id
+                WHERE (u.id_jefe = $1 OR u.id = $1)
+                  AND LOWER(COALESCE(r.descripcion, '')) IN ('supervisor', 'monitor')
+                  AND u.is_active = true
+                ORDER BY u.username ASC
+            """, user_uuid)
+            if not sup_rows:
+                sup_rows = await conn.fetch("""
+                    SELECT u.id, u.username, u.email, COALESCE(r.descripcion, 'supervisor') as role
+                    FROM users u
+                    LEFT JOIN cat_roles r ON u.id_cat_rol = r.id
+                    WHERE LOWER(COALESCE(r.descripcion, '')) = 'supervisor' AND u.is_active = true
+                    ORDER BY u.username ASC
+                """)
+        else: # supervisor
+            sup_rows = await conn.fetch("""
+                SELECT u.id, u.username, u.email, COALESCE(r.descripcion, 'supervisor') as role
+                FROM users u
+                LEFT JOIN cat_roles r ON u.id_cat_rol = r.id
+                WHERE u.id = $1 AND u.is_active = true
+            """, user_uuid)
+
+        supervisores = [
+            {"id": str(r["id"]), "username": r["username"], "email": r["email"], "role": r["role"]}
+            for r in sup_rows
+        ]
+
+        # Determinar Supervisor Seleccionado
+        selected_sup_uuid: Optional[uuid.UUID] = None
+        if user_role == "supervisor":
+            selected_sup_uuid = user_uuid
+        elif supervisor_id:
+            try:
+                selected_sup_uuid = uuid.UUID(supervisor_id)
+            except ValueError:
+                selected_sup_uuid = None
+
+        if not selected_sup_uuid and supervisores:
+            selected_sup_uuid = uuid.UUID(supervisores[0]["id"])
+
+        selected_supervisor_id = str(selected_sup_uuid) if selected_sup_uuid else None
+
+        # 2. Cartógrafos asignados a dicho Supervisor
+        cartografos = []
+        if selected_sup_uuid:
             cart_rows = await conn.fetch("""
                 SELECT u.id, u.username, u.email, sup.username as supervisor_username
                 FROM users u
                 LEFT JOIN cat_roles r ON u.id_cat_rol = r.id
-                LEFT JOIN users sup ON u.id_supervisor = sup.id
-                WHERE LOWER(r.descripcion) IN ('cartografo', 'consulta') AND u.is_active = true
+                LEFT JOIN users sup ON u.id_jefe = sup.id
+                WHERE LOWER(COALESCE(r.descripcion, '')) IN ('cartografo', 'monitor', 'consulta') 
+                  AND u.id_jefe = $1 
+                  AND u.is_active = true
                 ORDER BY u.username ASC
-            """)
-        else: # supervisor
-            cart_rows = await conn.fetch("""
-                SELECT u.id, u.username, u.email, sup.username as supervisor_username
-                FROM users u
-                LEFT JOIN cat_roles r ON u.id_cat_rol = r.id
-                LEFT JOIN users sup ON u.id_supervisor = sup.id
-                WHERE LOWER(r.descripcion) IN ('cartografo', 'consulta') AND u.id_supervisor = $1 AND u.is_active = true
-                ORDER BY u.username ASC
-            """, user_uuid)
+            """, selected_sup_uuid)
 
-        cartografos = [
-            {"id": str(r["id"]), "username": r["username"], "email": r["email"], "supervisor_username": r["supervisor_username"]}
-            for r in cart_rows
-        ]
+            cartografos = [
+                {"id": str(r["id"]), "username": r["username"], "email": r["email"], "supervisor_username": r["supervisor_username"]}
+                for r in cart_rows
+            ]
 
-        if is_admin(user_role):
-            upms_disp_rows = await conn.fetch("""
-                SELECT u.id, u.nombre, u.codigo_upm, COUNT(auc.id_cartografo)::int as cartografos_count
-                FROM upms u
-                LEFT JOIN asignacion_upms_cartografo auc ON u.id = auc.id_upm
-                GROUP BY u.id, u.nombre, u.codigo_upm
-                ORDER BY u.nombre ASC
-            """)
-        else: # supervisor
-            upms_disp_rows = await conn.fetch("""
-                SELECT u.id, u.nombre, u.codigo_upm, COUNT(auc.id_cartografo)::int as cartografos_count
-                FROM upms u
-                JOIN asignacion_upms_supervisor aus ON u.id = aus.id_upm AND aus.id_supervisor = $1
-                LEFT JOIN asignacion_upms_cartografo auc ON u.id = auc.id_upm
-                GROUP BY u.id, u.nombre, u.codigo_upm
-                ORDER BY u.nombre ASC
-            """, user_uuid)
-
-        upms_disponibles = [
-            UpmSimpleItem(
-                id=str(r["id"]),
-                nombre=r["nombre"] or "Sin nombre",
-                codigo_upm=r["codigo_upm"],
-                cartografos_count=r["cartografos_count"]
-            )
-            for r in upms_disp_rows
-        ]
-
-        upms_asignadas = []
+        # Determinar Cartógrafo Seleccionado
+        selected_cart_uuid: Optional[uuid.UUID] = None
         if cartografo_id:
             try:
-                cart_uuid = uuid.UUID(cartografo_id)
-                upms_asig_rows = await conn.fetch("""
-                    SELECT u.id, u.nombre, u.codigo_upm
-                    FROM upms u
-                    JOIN asignacion_upms_cartografo auc ON u.id = auc.id_upm
-                    WHERE auc.id_cartografo = $1
-                    ORDER BY u.nombre ASC
-                """, cart_uuid)
-                upms_asignadas = [
-                    UpmSimpleItem(id=str(r["id"]), nombre=r["nombre"] or "Sin nombre", codigo_upm=r["codigo_upm"])
-                    for r in upms_asig_rows
-                ]
+                cand_uuid = uuid.UUID(cartografo_id)
+                if any(c["id"] == str(cand_uuid) for c in cartografos):
+                    selected_cart_uuid = cand_uuid
             except ValueError:
-                raise HTTPException(status_code=400, detail="ID de cartógrafo inválido.")
+                selected_cart_uuid = None
+
+        if not selected_cart_uuid and cartografos:
+            selected_cart_uuid = uuid.UUID(cartografos[0]["id"])
+
+        selected_cartografo_id = str(selected_cart_uuid) if selected_cart_uuid else None
+
+        # 3. UPMs que tiene asignado el Supervisor y que NO han sido asignadas a ningún cartógrafo
+        upms_disponibles = []
+        if selected_sup_uuid:
+            upms_disp_rows = await conn.fetch("""
+                SELECT u.id, u.nombre, u.codigo_upm, 0 as cartografos_count
+                FROM upms u
+                JOIN asignacion_upms aus ON u.id = aus.id_upm AND aus.rol_asignacion = 'supervisor' AND aus.id_usuario = $1
+                WHERE u.deleted_at IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM asignacion_upms auc 
+                      WHERE auc.id_upm = u.id AND auc.rol_asignacion = 'cartografo'
+                  )
+                ORDER BY u.nombre ASC
+            """, selected_sup_uuid)
+
+            upms_disponibles = [
+                UpmSimpleItem(
+                    id=str(r["id"]),
+                    nombre=r["nombre"] or "Sin nombre",
+                    codigo_upm=r["codigo_upm"],
+                    cartografos_count=r["cartografos_count"]
+                )
+                for r in upms_disp_rows
+            ]
+
+        # 4. UPMs asignadas al cartógrafo seleccionado
+        upms_asignadas = []
+        if selected_cart_uuid:
+            upms_asig_rows = await conn.fetch("""
+                SELECT 
+                    u.id, 
+                    u.nombre, 
+                    u.codigo_upm,
+                    auc.asignado_por,
+                    ap.username as asignado_por_username,
+                    auc.asignado_en
+                FROM upms u
+                JOIN asignacion_upms auc ON u.id = auc.id_upm AND auc.rol_asignacion = 'cartografo'
+                LEFT JOIN users ap ON auc.asignado_por = ap.id
+                WHERE auc.id_usuario = $1 AND u.deleted_at IS NULL
+                ORDER BY u.nombre ASC
+            """, selected_cart_uuid)
+
+            upms_asignadas = [
+                UpmSimpleItem(
+                    id=str(r["id"]),
+                    nombre=r["nombre"] or "Sin nombre",
+                    codigo_upm=r["codigo_upm"],
+                    asignado_por=str(r["asignado_por"]) if r["asignado_por"] else None,
+                    asignado_por_username=r["asignado_por_username"],
+                    asignado_en=r["asignado_en"]
+                )
+                for r in upms_asig_rows
+            ]
 
     return AsignacionUpmCartografoResponse(
+        supervisores=supervisores,
+        selected_supervisor_id=selected_supervisor_id,
         cartografos=cartografos,
+        selected_cartografo_id=selected_cartografo_id,
         upms_disponibles=upms_disponibles,
         upms_asignadas=upms_asignadas
     )
@@ -279,41 +377,61 @@ async def assign_upms_to_cartografo(
     pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
-    Asigna UPMs a un cartógrafo (1 UPM -> N Cartógrafos).
+    Asigna UPMs a un cartógrafo en asignacion_upms.
     """
     user_role = normalize_role(str(current_user.get("role", "")))
-    if not is_admin(user_role) and user_role != "supervisor":
+    if not is_admin(user_role) and user_role not in ("supervisor", "monitor"):
         raise HTTPException(status_code=403, detail="Acceso denegado.")
+
+    if not payload.id_cartografo or not payload.id_cartografo.strip():
+        raise HTTPException(status_code=400, detail="Debe seleccionar un cartógrafo de destino.")
+    if not payload.upm_ids or len(payload.upm_ids) == 0:
+        raise HTTPException(status_code=400, detail="Debe seleccionar al menos una UPM para asignar.")
 
     try:
         cart_uuid = uuid.UUID(payload.id_cartografo)
         upm_uuids = [uuid.UUID(uid) for uid in payload.upm_ids]
     except ValueError:
-        raise HTTPException(status_code=400, detail="UUIDs inválidos.")
+        raise HTTPException(status_code=400, detail="Uno o más identificadores UUID son inválidos.")
 
     async with pool.acquire() as conn:
-        cart = await conn.fetchrow("SELECT username, id_supervisor FROM users WHERE id = $1 AND is_active = true", cart_uuid)
+        cart = await conn.fetchrow("SELECT username, id_jefe FROM users WHERE id = $1 AND is_active = true", cart_uuid)
         if not cart:
-            raise HTTPException(status_code=404, detail="Cartógrafo no encontrado.")
+            raise HTTPException(status_code=404, detail="Cartógrafo no encontrado o inactivo.")
 
         if user_role == "supervisor":
-            if str(cart["id_supervisor"]) != str(current_user["id"]):
+            # Si el cartógrafo tiene otro supervisor asignado, rechazar
+            if cart["id_jefe"] is not None and str(cart["id_jefe"]) != str(current_user["id"]):
                 raise HTTPException(status_code=403, detail="No tienes permisos para asignar tareas a este cartógrafo.")
 
+            # Verificar que las UPMs pertenezcan a este supervisor en asignacion_upms
+            sup_upms = await conn.fetch("""
+                SELECT id_upm FROM asignacion_upms 
+                WHERE rol_asignacion = 'supervisor' AND id_usuario = $1 AND id_upm = ANY($2::uuid[])
+            """, uuid.UUID(str(current_user["id"])), upm_uuids)
+            if len(sup_upms) != len(upm_uuids):
+                raise HTTPException(status_code=403, detail="Una o más UPMs seleccionadas no están bajo su supervisión.")
+
+        actor_uuid = uuid.UUID(str(current_user["id"]))
         for u_id in upm_uuids:
+            # Elimina asignación previa a cualquier otro cartógrafo para garantizar que pertenezca al cartógrafo seleccionado
             await conn.execute("""
-                INSERT INTO asignacion_upms_cartografo (id_upm, id_cartografo, asignado_por)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (id_upm, id_cartografo) DO NOTHING
-            """, u_id, cart_uuid, uuid.UUID(str(current_user["id"])))
+                DELETE FROM asignacion_upms
+                WHERE id_upm = $1 AND rol_asignacion = 'cartografo'
+            """, u_id)
+
+            await conn.execute("""
+                INSERT INTO asignacion_upms (id_upm, id_usuario, rol_asignacion, asignado_por, asignado_en)
+                VALUES ($1, $2, 'cartografo', $3, NOW())
+            """, u_id, cart_uuid, actor_uuid)
 
     await registrar_auditoria(
         pool=pool,
         id_actor=str(current_user["id"]),
         accion="ASIGNAR_UPMS_CARTOGRAFO",
-        entidad="asignacion_upms_cartografo",
+        entidad="asignacion_upms",
         entidad_id=payload.id_cartografo,
-        detalle={"upm_ids": payload.upm_ids, "cartografo": cart["username"]}
+        detalle={"upm_ids": payload.upm_ids, "cartografo": cart["username"], "rol_asignacion": "cartografo"}
     )
 
     return {"success": True, "message": f"{len(upm_uuids)} UPMs asignadas al cartógrafo correctamente."}
@@ -325,11 +443,16 @@ async def unassign_upms_from_cartografo(
     pool: asyncpg.Pool = Depends(get_db_pool)
 ):
     """
-    Remueve la asignación de UPMs a un cartógrafo.
+    Remueve la asignación de UPMs a un cartógrafo en asignacion_upms.
     """
     user_role = normalize_role(str(current_user.get("role", "")))
-    if not is_admin(user_role) and user_role != "supervisor":
+    if not is_admin(user_role) and user_role not in ("supervisor", "monitor"):
         raise HTTPException(status_code=403, detail="Acceso denegado.")
+
+    if not payload.id_cartografo or not payload.id_cartografo.strip():
+        raise HTTPException(status_code=400, detail="Debe indicar el cartógrafo a desasignar.")
+    if not payload.upm_ids or len(payload.upm_ids) == 0:
+        raise HTTPException(status_code=400, detail="Debe seleccionar al menos una UPM para desasignar.")
 
     try:
         cart_uuid = uuid.UUID(payload.id_cartografo)
@@ -339,17 +462,17 @@ async def unassign_upms_from_cartografo(
 
     async with pool.acquire() as conn:
         await conn.execute("""
-            DELETE FROM asignacion_upms_cartografo
-            WHERE id_cartografo = $1 AND id_upm = ANY($2::uuid[])
+            DELETE FROM asignacion_upms
+            WHERE rol_asignacion = 'cartografo' AND id_usuario = $1 AND id_upm = ANY($2::uuid[])
         """, cart_uuid, upm_uuids)
 
     await registrar_auditoria(
         pool=pool,
         id_actor=str(current_user["id"]),
         accion="DESASIGNAR_UPMS_CARTOGRAFO",
-        entidad="asignacion_upms_cartografo",
+        entidad="asignacion_upms",
         entidad_id=payload.id_cartografo,
-        detalle={"upm_ids": payload.upm_ids}
+        detalle={"upm_ids": payload.upm_ids, "rol_asignacion": "cartografo"}
     )
 
     return {"success": True, "message": f"{len(upm_uuids)} UPMs desasignadas del cartógrafo."}

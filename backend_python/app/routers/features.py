@@ -273,28 +273,31 @@ async def create_feature(tabla: str, payload: Dict[str, Any]):
                     )
                 )
 
+            id_estructura_user = parse_int_or_none(properties.get("id_estructura_user"))
+
             sql = """
             INSERT INTO estructuras (
-                id, geom, nombre, notas, id_categoria, id_tipo,
+                id, geom, nombre, notas, id_categoria, id_tipo, id_estructura_user,
                 estado, niveles_cantidad, created_by, updated_by, device_id, sync_version
             )
             VALUES (
                 COALESCE($1::uuid, uuid_generate_v4()), ST_GeomFromGeoJSON($2),
-                $3, $4, $5, $6, $7, $8,
-                $9::uuid, $10::uuid, $11, 0
+                $3, $4, $5, $6, $7, $8, $9,
+                $10::uuid, $11::uuid, $12, 0
             )
             ON CONFLICT (id) DO UPDATE SET
                 geom = ST_GeomFromGeoJSON($2),
                 nombre = $3, notas = $4, id_categoria = $5,
-                id_tipo = $6, estado = $7,
-                niveles_cantidad = $8,
-                updated_by = $10::uuid, device_id = $11,
+                id_tipo = $6, id_estructura_user = $7, estado = $8,
+                niveles_cantidad = $9,
+                created_by = COALESCE(estructuras.created_by, EXCLUDED.created_by),
+                updated_by = $11::uuid, device_id = $12,
                 sync_version = estructuras.sync_version + 1,
                 updated_at = NOW(),
                 deleted_at = NULL
             RETURNING
                 id::text, ST_AsGeoJSON(geom)::json AS geometry,
-                nombre, notas, id_categoria, id_tipo,
+                nombre, notas, id_categoria, id_tipo, id_estructura_user,
                 estado, niveles_cantidad, sync_version,
                 created_by::text, updated_by::text, device_id;
             """
@@ -302,7 +305,7 @@ async def create_feature(tabla: str, payload: Dict[str, Any]):
                 row = await conn.fetchrow(
                     sql, feature_id, geom_json,
                     properties.get("nombre"), properties.get("notas"),
-                    id_categoria, id_tipo, properties.get("estado"),
+                    id_categoria, id_tipo, id_estructura_user, properties.get("estado"),
                     properties.get("niveles_cantidad", 1),
                     created_by, updated_by, device_id
                 )
@@ -317,6 +320,7 @@ async def create_feature(tabla: str, payload: Dict[str, Any]):
             VALUES (COALESCE($1::uuid, uuid_generate_v4()), ST_GeomFromGeoJSON($2), $3, $4, $5, $6::uuid, $7::uuid, $8, 0)
             ON CONFLICT (id) DO UPDATE SET
                 geom = ST_GeomFromGeoJSON($2), nombre = $3, tipo = $4, notas = $5,
+                created_by = COALESCE(caminos.created_by, EXCLUDED.created_by),
                 updated_by = $7::uuid, device_id = $8,
                 sync_version = caminos.sync_version + 1,
                 updated_at = NOW(), deleted_at = NULL
@@ -335,6 +339,7 @@ async def create_feature(tabla: str, payload: Dict[str, Any]):
             VALUES (COALESCE($1::uuid, uuid_generate_v4()), ST_GeomFromGeoJSON($2), $3, $4, $5, $6::uuid, $7::uuid, $8, 0)
             ON CONFLICT (id) DO UPDATE SET
                 geom = ST_GeomFromGeoJSON($2), nombre = $3, codigo_upm = $4, notas = $5,
+                created_by = COALESCE(upms.created_by, EXCLUDED.created_by),
                 updated_by = $7::uuid, device_id = $8,
                 sync_version = upms.sync_version + 1,
                 updated_at = NOW(), deleted_at = NULL

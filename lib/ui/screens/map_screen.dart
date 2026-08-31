@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -454,7 +455,8 @@ class _MapScreenState extends State<MapScreen> {
                   child: PanelEdicionPoligono(
                     digCtrl: digCtrl,
                     onGuardarPoligono: () {
-                      digCtrl.confirmarEdicionPoligono();
+                      final auth = context.read<AuthController>();
+                      digCtrl.confirmarEdicionPoligono(updatedBy: auth.currentUserId);
                     },
                     onCancelarEdicionCompleta: () {
                       digCtrl.cancelarEdicionPoligono();
@@ -470,8 +472,9 @@ class _MapScreenState extends State<MapScreen> {
                   child: PanelEdicionPunto(
                     digCtrl: digCtrl,
                     onFinalizar: () {
+                      final auth = context.read<AuthController>();
                       final pos = digCtrl.posicionDragPuntoTemporal ?? _flutterMapCtrl.camera.center;
-                      digCtrl.confirmarDragPunto(pos);
+                      digCtrl.confirmarDragPunto(pos, updatedBy: auth.currentUserId);
                     },
                     onCancelar: () {
                       digCtrl.cancelarEdicionPunto();
@@ -663,8 +666,10 @@ class _MapScreenState extends State<MapScreen> {
           _buildPreviewPoligonoEdicion(digCtrl),
 
         // ── Capa 5: Líneas (Caminos) ───────────────────────────────────────
-        if (digCtrl.mostrarLineas)
+        if (digCtrl.mostrarLineas) ...[
           _buildCapaLineas(digCtrl),
+          _buildEtiquetasCaminos(digCtrl),
+        ],
 
         // ── Capa 6: Línea en construcción (preview) ───────────────────────
         if ((digCtrl.modo == ModoDigitalizacion.linea || digCtrl.modo == ModoDigitalizacion.cortarLinea) &&
@@ -726,79 +731,130 @@ class _MapScreenState extends State<MapScreen> {
               ? (digCtrl.posicionDragPuntoTemporal ?? punto.coordenadas)
               : punto.coordenadas;
 
-          return Marker(
-            point: posicionActual,
-            width: (seleccionado || esModoEditarPunto) ? 48 : 36,
-            height: (seleccionado || esModoEditarPunto) ? 48 : 36,
-            child: esModoEditarPunto
-                ? GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onPanStart: (details) {
-                      digCtrl.iniciarDragPunto(punto.id);
-                    },
-                    onPanUpdate: (details) {
-                      final newPos = _flutterMapCtrl.camera.screenOffsetToLatLng(details.globalPosition);
-                      digCtrl.actualizarDragPunto(newPos);
-                    },
-                    onPanEnd: (details) {
-                      // El marcador queda en la nueva posición visual
-                      // El usuario puede seguir arrastrando o pulsar "Confirmar Posición".
-                    },
-                    onPanCancel: () {},
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: enDrag
-                            ? const Color(0xFFE53935).withOpacity(0.9)
-                            : const Color(0xFFFFB74D).withOpacity(0.95),
-                        border: Border.all(
-                          color: Colors.white,
-                          width: 3,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: (enDrag ? const Color(0xFFE53935) : const Color(0xFFFFB74D)).withOpacity(0.6),
-                            blurRadius: 12,
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: Text(
-                          punto.emojiActivo,
-                          style: const TextStyle(fontSize: 20),
-                        ),
-                      ),
-                    ),
-                  )
-                : AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
+          final esAusente = punto.estado == EstadoEstructura.ausente;
+          final colorFondo = seleccionado
+              ? const Color(0xFFFFD600).withValues(alpha: 0.95)
+              : (esAusente
+                  ? const Color(0xFFEF5350).withValues(alpha: 0.9)
+                  : const Color(0xFF4FC3F7).withValues(alpha: 0.85));
+          final colorSombra = seleccionado
+              ? const Color(0xFFFFD600)
+              : (esAusente ? const Color(0xFFEF5350) : const Color(0xFF4FC3F7));
+
+          final circleSize = (seleccionado || esModoEditarPunto) ? 48.0 : 36.0;
+          final textoEtiqueta = punto.idEstructuraUser != null
+              ? '${punto.idEstructuraUser}'
+              : (punto.nombre.trim().isNotEmpty ? punto.nombre.trim() : '');
+          final mostrarEtiqueta = textoEtiqueta.isNotEmpty;
+
+          final iconWidget = esModoEditarPunto
+              ? GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onPanStart: (details) {
+                    digCtrl.iniciarDragPunto(punto.id);
+                  },
+                  onPanUpdate: (details) {
+                    final newPos = _flutterMapCtrl.camera.screenOffsetToLatLng(details.globalPosition);
+                    digCtrl.actualizarDragPunto(newPos);
+                  },
+                  onPanEnd: (details) {
+                    // El marcador queda en la nueva posición visual
+                    // El usuario puede seguir arrastrando o pulsar "Confirmar Posición".
+                  },
+                  onPanCancel: () {},
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: circleSize,
+                    height: circleSize,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: seleccionado
-                          ? const Color(0xFFFFD600).withOpacity(0.95)
-                          : const Color(0xFF4FC3F7).withOpacity(0.85),
+                      color: enDrag
+                          ? const Color(0xFFE53935).withValues(alpha: 0.9)
+                          : const Color(0xFFFFB74D).withValues(alpha: 0.95),
                       border: Border.all(
                         color: Colors.white,
-                        width: seleccionado ? 3 : 2,
+                        width: 3,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: (seleccionado
-                                  ? const Color(0xFFFFD600)
-                                  : const Color(0xFF4FC3F7))
-                              .withOpacity(0.6),
-                          blurRadius: seleccionado ? 14 : 6,
+                          color: (enDrag ? const Color(0xFFE53935) : const Color(0xFFFFB74D)).withValues(alpha: 0.6),
+                          blurRadius: 12,
                         ),
                       ],
                     ),
                     child: Center(
                       child: Text(
                         punto.emojiActivo,
-                        style: TextStyle(fontSize: seleccionado ? 18 : 14),
+                        style: const TextStyle(fontSize: 20),
                       ),
                     ),
                   ),
+                )
+              : AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: circleSize,
+                  height: circleSize,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: colorFondo,
+                    border: Border.all(
+                      color: Colors.white,
+                      width: seleccionado ? 3 : 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: colorSombra.withValues(alpha: 0.6),
+                        blurRadius: seleccionado ? 14 : 6,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Text(
+                      punto.emojiActivo,
+                      style: TextStyle(fontSize: seleccionado ? 18 : 14),
+                    ),
+                  ),
+                );
+
+          return Marker(
+            point: posicionActual,
+            width: 80,
+            height: 80,
+            alignment: Alignment.center,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                iconWidget,
+                if (mostrarEtiqueta)
+                  Positioned(
+                    top: 40 + (circleSize / 2) + 1,
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 110),
+                      child: Text(
+                        textoEtiqueta,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.3,
+                          shadows: [
+                            Shadow(offset: Offset(-1, -1), blurRadius: 1.5, color: Colors.white),
+                            Shadow(offset: Offset(1, -1), blurRadius: 1.5, color: Colors.white),
+                            Shadow(offset: Offset(-1, 1), blurRadius: 1.5, color: Colors.white),
+                            Shadow(offset: Offset(1, 1), blurRadius: 1.5, color: Colors.white),
+                            Shadow(offset: Offset(0, 0), blurRadius: 3.5, color: Colors.white),
+                            Shadow(offset: Offset(0, 0), blurRadius: 5.5, color: Colors.white),
+                          ],
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           );
         }),
       ],
@@ -820,11 +876,79 @@ class _MapScreenState extends State<MapScreen> {
           points: points,
           color: seleccionada
               ? const Color(0xFFFFCC02)
-              : const Color(0xFFFFB74D),
+              : const Color(0xFFE53935),
           strokeWidth: seleccionada ? 4.0 : 2.5,
           pattern: linea.tipo == TipoCamino.vereda
               ? const StrokePattern.dotted()
               : const StrokePattern.solid(),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildEtiquetasCaminos(DigitalizacionController digCtrl) {
+    final lineasConNombre = digCtrl.lineas.where((l) => l.vertices.length >= 2 && l.nombre.trim().isNotEmpty);
+    if (lineasConNombre.isEmpty) return const SizedBox.shrink();
+
+    final camera = _flutterMapCtrl.camera;
+
+    return MarkerLayer(
+      markers: lineasConNombre.map((linea) {
+        final seleccionada = digCtrl.idSeleccionado == linea.id;
+        final midIdx = linea.vertices.length ~/ 2;
+        final v1 = linea.vertices[midIdx - 1];
+        final v2 = linea.vertices[midIdx];
+        final puntoMedio = LatLng(
+          (v1.latitude + v2.latitude) / 2.0,
+          (v1.longitude + v2.longitude) / 2.0,
+        );
+
+        final p1 = camera.getOffsetFromOrigin(v1);
+        final p2 = camera.getOffsetFromOrigin(v2);
+        final dx = p2.dx - p1.dx;
+        final dy = p2.dy - p1.dy;
+
+        // Calcular ángulo en radianes en espacio de pantalla
+        double angle = math.atan2(dy, dx);
+        // Normalizar ángulo para que el texto nunca quede invertido (de cabeza)
+        if (angle > math.pi / 2) {
+          angle -= math.pi;
+        } else if (angle < -math.pi / 2) {
+          angle += math.pi;
+        }
+
+        final textoCamino = linea.nombre.trim().isNotEmpty ? linea.nombre : linea.tipo.label;
+
+        return Marker(
+          point: puntoMedio,
+          width: 220,
+          height: 36,
+          alignment: Alignment.center,
+          child: Center(
+            child: Transform.rotate(
+              angle: angle,
+              child: Text(
+                textoCamino,
+                style: TextStyle(
+                  color: seleccionada ? const Color(0xFFD50000) : Colors.black,
+                  fontSize: seleccionada ? 12 : 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.2,
+                  shadows: const [
+                    Shadow(offset: Offset(-1, -1), blurRadius: 2, color: Colors.white),
+                    Shadow(offset: Offset(1, -1), blurRadius: 2, color: Colors.white),
+                    Shadow(offset: Offset(-1, 1), blurRadius: 2, color: Colors.white),
+                    Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.white),
+                    Shadow(offset: Offset(0, 0), blurRadius: 4, color: Colors.white),
+                    Shadow(offset: Offset(0, 0), blurRadius: 6, color: Colors.white),
+                  ],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
         );
       }).toList(),
     );
@@ -838,8 +962,8 @@ class _MapScreenState extends State<MapScreen> {
         return Polygon(
           points: poligono.vertices,
           color: seleccionado
-              ? const Color(0xFFFFD600).withOpacity(0.2)
-              : const Color(0xFFA5D6A7).withOpacity(0.2),
+              ? const Color(0xFFFFD600).withValues(alpha: 0.2)
+              : const Color(0xFFA5D6A7).withValues(alpha: 0.2),
           borderColor: seleccionado
               ? const Color(0xFFFFD600)
               : const Color(0xFFA5D6A7),
@@ -848,9 +972,16 @@ class _MapScreenState extends State<MapScreen> {
               ? poligono.codigoUPM
               : poligono.nombre,
           labelStyle: const TextStyle(
-            color: Color(0xFFA5D6A7),
+            color: Colors.black,
             fontSize: 11,
             fontWeight: FontWeight.w700,
+            shadows: [
+              Shadow(offset: Offset(-1, -1), blurRadius: 2, color: Colors.white),
+              Shadow(offset: Offset(1, -1), blurRadius: 2, color: Colors.white),
+              Shadow(offset: Offset(-1, 1), blurRadius: 2, color: Colors.white),
+              Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.white),
+              Shadow(offset: Offset(0, 0), blurRadius: 4, color: Colors.white),
+            ],
           ),
         );
       }).toList(),
@@ -1133,6 +1264,7 @@ class _MapScreenState extends State<MapScreen> {
         nombre: result.nombre,
         idCategoria: result.idCategoria,
         idTipo: result.idTipo,
+        idEstructuraUser: result.idEstructuraUser,
         estado: result.estado,
         nivelesCantidad: result.nivelesCantidad,
         notas: result.notas,
@@ -1446,6 +1578,7 @@ class _MapScreenState extends State<MapScreen> {
                             baseUrl: PostGISService().baseUrl,
                             tipos: _tiposCatalogo,
                             nombreInicial: punto.nombre,
+                            idEstructuraUserInicial: punto.idEstructuraUser,
                             idCategoriaInicial: punto.idCategoria,
                             idTipoInicial: punto.idTipo,
                             estadoInicial: punto.estado,
@@ -1467,23 +1600,29 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         );
                         if (result != null && mounted && esPropietario) {
+                          final puntoActual = digCtrl.puntos.firstWhere(
+                            (p) => p.id == punto.id,
+                            orElse: () => punto,
+                          );
+                          final ownerId = puntoActual.createdBy ?? punto.createdBy ?? auth.currentUserId;
                           final puntoEditado = PuntoEstructura(
-                            id: punto.id,
-                            coordenadas: punto.coordenadas,
+                            id: puntoActual.id,
+                            coordenadas: puntoActual.coordenadas,
                             nombre: result.nombre,
                             idCategoria: result.idCategoria,
                             idTipo: result.idTipo,
+                            idEstructuraUser: result.idEstructuraUser ?? puntoActual.idEstructuraUser,
                             estado: result.estado,
                             nivelesCantidad: result.nivelesCantidad,
                             notas: result.notas,
-                            niveles: punto.niveles,
-                            fechaCreacion: punto.fechaCreacion,
+                            niveles: puntoActual.niveles,
+                            fechaCreacion: puntoActual.fechaCreacion,
                             updatedAt: DateTime.now(),
                             syncDirty: true,
-                            createdBy: punto.createdBy,
+                            createdBy: ownerId,
                             updatedBy: auth.currentUserId,
-                            deviceId: punto.deviceId,
-                            syncVersion: punto.syncVersion,
+                            deviceId: puntoActual.deviceId ?? punto.deviceId ?? auth.deviceId,
+                            syncVersion: puntoActual.syncVersion,
                           );
                           await digCtrl.actualizarPunto(puntoEditado);
                           if (!mapCtx.mounted) return;
@@ -1519,6 +1658,7 @@ class _MapScreenState extends State<MapScreen> {
                         baseUrl: PostGISService().baseUrl,
                         tipos: _tiposCatalogo,
                         nombreInicial: punto.nombre,
+                        idEstructuraUserInicial: punto.idEstructuraUser,
                         idCategoriaInicial: punto.idCategoria,
                         idTipoInicial: punto.idTipo,
                         estadoInicial: punto.estado,
@@ -1733,6 +1873,7 @@ class _MapScreenState extends State<MapScreen> {
                                 digCtrl.actualizarAtributosLineaSeleccionada(
                                   result.nombre,
                                   result.tipo,
+                                  updatedBy: auth.currentUserId,
                                 );
                               }
                             },
@@ -1955,6 +2096,7 @@ class _MapScreenState extends State<MapScreen> {
                                 digCtrl.actualizarAtributosPoligonoSeleccionado(
                                   result.nombre,
                                   result.codigoUPM,
+                                  updatedBy: auth.currentUserId,
                                 );
                               }
                             },

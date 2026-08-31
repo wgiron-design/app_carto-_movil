@@ -22,6 +22,7 @@ class EstructuraProperties(FeatureProperties):
     """Propiedades específicas para la capa de estructuras con referencias a catálogos."""
     id_categoria: int
     id_tipo: int
+    id_estructura_user: Optional[int] = None
     nombre: Optional[str] = None
     notas: Optional[str] = None
     estado: Optional[str] = "presente"

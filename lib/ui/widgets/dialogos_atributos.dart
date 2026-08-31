@@ -13,6 +13,7 @@ typedef AtributosPuntoResult = ({
   String nombre,
   int idCategoria,
   int idTipo,
+  int? idEstructuraUser,
   EstadoEstructura estado,
   int nivelesCantidad,
   String notas,
@@ -116,6 +117,7 @@ class DialogoAtributosPunto extends StatefulWidget {
 
   // Parámetros opcionales para modo edición / consulta
   final String? nombreInicial;
+  final int? idEstructuraUserInicial;
   final int? idCategoriaInicial;
   final int? idTipoInicial;
   final EstadoEstructura? estadoInicial;
@@ -134,6 +136,7 @@ class DialogoAtributosPunto extends StatefulWidget {
     required this.baseUrl,
     this.tipos = const [],
     this.nombreInicial,
+    this.idEstructuraUserInicial,
     this.idCategoriaInicial,
     this.idTipoInicial,
     this.estadoInicial,
@@ -152,6 +155,7 @@ class DialogoAtributosPunto extends StatefulWidget {
 class _DialogoAtributosPuntoState extends State<DialogoAtributosPunto> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nombreCtrl;
+  late final TextEditingController _idUserCtrl;
   late final TextEditingController _notasCtrl;
 
   late int _idTipo;
@@ -169,6 +173,7 @@ class _DialogoAtributosPuntoState extends State<DialogoAtributosPunto> {
   void initState() {
     super.initState();
     _nombreCtrl = TextEditingController(text: widget.nombreInicial ?? '');
+    _idUserCtrl = TextEditingController(text: widget.idEstructuraUserInicial?.toString() ?? '');
     _notasCtrl  = TextEditingController(text: widget.notasIniciales ?? '');
     _estado  = widget.estadoInicial ?? EstadoEstructura.presente;
     _niveles = widget.nivelesInicial ?? 1;
@@ -236,6 +241,7 @@ class _DialogoAtributosPuntoState extends State<DialogoAtributosPunto> {
   @override
   void dispose() {
     _nombreCtrl.dispose();
+    _idUserCtrl.dispose();
     _notasCtrl.dispose();
     super.dispose();
   }
@@ -290,6 +296,20 @@ class _DialogoAtributosPuntoState extends State<DialogoAtributosPunto> {
                           (!soloLectura && (v == null || v.trim().isEmpty))
                               ? 'Requerido'
                               : null,
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    // ── ID de Estructura (id_estructura_user para etiqueta) ──
+                    TextFormField(
+                      controller: _idUserCtrl,
+                      readOnly: soloLectura,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'ID Estructura (Etiqueta en mapa)',
+                        hintText: 'ej. 1, 42, 105...',
+                        prefixIcon: Icon(Icons.tag, size: 18),
+                      ),
                     ),
 
                     const SizedBox(height: 14),
@@ -418,6 +438,7 @@ class _DialogoAtributosPuntoState extends State<DialogoAtributosPunto> {
                   nombre: _nombreCtrl.text.trim(),
                   idCategoria: _idCategoria,
                   idTipo: _idTipo,
+                  idEstructuraUser: int.tryParse(_idUserCtrl.text.trim()),
                   estado: _estado,
                   nivelesCantidad: _niveles,
                   notas: _notasCtrl.text.trim(),
