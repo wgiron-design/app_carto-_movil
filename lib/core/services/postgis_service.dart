@@ -17,6 +17,14 @@ class PostGISService {
 
   late String baseUrl = defaultBaseUrl;
 
+  /// Token JWT del usuario autenticado en sesión
+  String? authToken;
+
+  Map<String, String> get _authHeaders => {
+    if (authToken != null && authToken!.trim().isNotEmpty)
+      'Authorization': 'Bearer ${authToken!.trim()}',
+  };
+
   void setBaseUrl(String url) {
     baseUrl = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
   }
@@ -88,14 +96,20 @@ class PostGISService {
     return [];
   }
 
-  /// Descarga UPMs (Polígonos) GeoJSON desde PostGIS
+  /// Descarga UPMs (Polígonos) GeoJSON desde PostGIS (filtrado por usuario y rol autenticado)
   Future<List<PoligonoUPM>> getUPMs() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/api/capas/upms/features')).timeout(const Duration(seconds: 6));
+      final headers = _authHeaders;
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/capas/upms/features'),
+        headers: headers.isNotEmpty ? headers : null,
+      ).timeout(const Duration(seconds: 6));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final features = (data['features'] as List? ?? []);
         return features.map((f) => PoligonoUPM.fromGeoJson(f)).toList();
+      } else {
+        debugPrint('[PostGISService] Error HTTP ${response.statusCode} obteniendo UPMs: ${response.body}');
       }
     } catch (e) {
       debugPrint('[PostGISService] Error obteniendo UPMs: $e');
@@ -186,10 +200,11 @@ class PostGISService {
   /// Retorna null si hay un error de conexión.
   Future<Map<String, int>?> contarElementosEnPostGIS() async {
     try {
+      final headers = _authHeaders.isNotEmpty ? _authHeaders : null;
       final futuresCount = await Future.wait([
         http.get(Uri.parse('$baseUrl/api/capas/estructuras/count')).timeout(const Duration(seconds: 5)),
         http.get(Uri.parse('$baseUrl/api/capas/caminos/count')).timeout(const Duration(seconds: 5)),
-        http.get(Uri.parse('$baseUrl/api/capas/upms/count')).timeout(const Duration(seconds: 5)),
+        http.get(Uri.parse('$baseUrl/api/capas/upms/count'), headers: headers).timeout(const Duration(seconds: 5)),
       ]);
 
       if (futuresCount.every((r) => r.statusCode == 200)) {
@@ -204,7 +219,7 @@ class PostGISService {
       final futuresFeatures = await Future.wait([
         http.get(Uri.parse('$baseUrl/api/capas/estructuras/features')).timeout(const Duration(seconds: 6)),
         http.get(Uri.parse('$baseUrl/api/capas/caminos/features')).timeout(const Duration(seconds: 6)),
-        http.get(Uri.parse('$baseUrl/api/capas/upms/features')).timeout(const Duration(seconds: 6)),
+        http.get(Uri.parse('$baseUrl/api/capas/upms/features'), headers: headers).timeout(const Duration(seconds: 6)),
       ]);
 
       if (futuresFeatures.every((r) => r.statusCode == 200)) {

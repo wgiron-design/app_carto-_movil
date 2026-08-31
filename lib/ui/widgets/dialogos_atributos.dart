@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../core/models/capa_geometrica.dart';
 import '../../ui/theme/app_theme.dart';
+import '../../ui/theme/colores_categoria.dart';
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -476,9 +477,30 @@ class _DialogoAtributosPuntoState extends State<DialogoAtributosPunto> {
       hint: const Text('Selecciona una categoría'),
       isExpanded: true,
       items: _categoriasFiltradas.map((c) {
+        final color = getColorPorCategoriaEstructura(c.id);
         return DropdownMenuItem<int>(
           value: c.id,
-          child: Text(c.nombre, style: const TextStyle(fontSize: 13)),
+          child: Row(
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white70, width: 1),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  c.nombre,
+                  style: const TextStyle(fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         );
       }).toList(),
       onChanged: soloLectura ? null : (v) {

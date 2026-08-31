@@ -18,6 +18,7 @@ import '../../core/models/resultado_seleccion.dart';
 import '../../core/controllers/auth_controller.dart';
 import '../../core/services/postgis_service.dart';
 import '../../ui/theme/app_theme.dart';
+import '../../ui/theme/colores_categoria.dart';
 import '../../ui/widgets/dialogo_calibracion.dart';
 import '../../ui/widgets/barra_herramientas.dart';
 import '../../ui/widgets/dialogos_atributos.dart';
@@ -732,14 +733,15 @@ class _MapScreenState extends State<MapScreen> {
               : punto.coordenadas;
 
           final esAusente = punto.estado == EstadoEstructura.ausente;
+          final colorCat = getColorPorCategoriaEstructura(punto.idCategoria);
           final colorFondo = seleccionado
               ? const Color(0xFFFFD600).withValues(alpha: 0.95)
               : (esAusente
                   ? const Color(0xFFEF5350).withValues(alpha: 0.9)
-                  : const Color(0xFF4FC3F7).withValues(alpha: 0.85));
+                  : colorCat.withValues(alpha: 0.90));
           final colorSombra = seleccionado
               ? const Color(0xFFFFD600)
-              : (esAusente ? const Color(0xFFEF5350) : const Color(0xFF4FC3F7));
+              : (esAusente ? const Color(0xFFEF5350) : colorCat);
 
           final circleSize = (seleccionado || esModoEditarPunto) ? 48.0 : 36.0;
           final textoEtiqueta = punto.idEstructuraUser != null
@@ -770,22 +772,23 @@ class _MapScreenState extends State<MapScreen> {
                       shape: BoxShape.circle,
                       color: enDrag
                           ? const Color(0xFFE53935).withValues(alpha: 0.9)
-                          : const Color(0xFFFFB74D).withValues(alpha: 0.95),
+                          : colorCat.withValues(alpha: 0.95),
                       border: Border.all(
                         color: Colors.white,
                         width: 3,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: (enDrag ? const Color(0xFFE53935) : const Color(0xFFFFB74D)).withValues(alpha: 0.6),
+                          color: (enDrag ? const Color(0xFFE53935) : colorCat).withValues(alpha: 0.6),
                           blurRadius: 12,
                         ),
                       ],
                     ),
-                    child: Center(
-                      child: Text(
-                        punto.emojiActivo,
-                        style: const TextStyle(fontSize: 20),
+                    child: const Center(
+                      child: Icon(
+                        Icons.place,
+                        color: Colors.white,
+                        size: 24,
                       ),
                     ),
                   ),
@@ -809,9 +812,13 @@ class _MapScreenState extends State<MapScreen> {
                     ],
                   ),
                   child: Center(
-                    child: Text(
-                      punto.emojiActivo,
-                      style: TextStyle(fontSize: seleccionado ? 18 : 14),
+                    child: Icon(
+                      Icons.place,
+                      color: Colors.white,
+                      size: seleccionado ? 22 : 18,
+                      shadows: const [
+                        Shadow(color: Colors.black45, blurRadius: 3),
+                      ],
                     ),
                   ),
                 );
@@ -1411,7 +1418,23 @@ class _MapScreenState extends State<MapScreen> {
 
             Row(
               children: [
-                Text(punto.emojiActivo, style: const TextStyle(fontSize: 28)),
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: getColorPorCategoriaEstructura(punto.idCategoria),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: getColorPorCategoriaEstructura(punto.idCategoria).withOpacity(0.5),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.place, color: Colors.white, size: 20),
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -1426,10 +1449,11 @@ class _MapScreenState extends State<MapScreen> {
                         ),
                       ),
                       Text(
-                        '${punto.idTipo == 1 ? "Formal" : punto.idTipo == 2 ? "Ref. Geográfica" : "Tipo ${punto.idTipo}"} · Cat. ${punto.idCategoria}',
-                        style: const TextStyle(
-                          color: Color(0xFF4FC3F7),
+                        '${punto.idTipo == 1 ? "Formal" : punto.idTipo == 2 ? "Ref. Geográfica" : "Tipo ${punto.idTipo}"} · ${getNombreCategoriaEstructura(punto.idCategoria, nombreFallback: punto.nombreCategoria)}',
+                        style: TextStyle(
+                          color: getColorPorCategoriaEstructura(punto.idCategoria),
                           fontSize: 13,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -2767,7 +2791,7 @@ class _MapScreenState extends State<MapScreen> {
                   icon: Icons.place_outlined,
                   label: 'Puntos / Estructuras',
                   count: digCtrl.puntos.length,
-                  color: const Color(0xFF4FC3F7),
+                  color: const Color(0xFF00BFA5),
                   activo: digCtrl.modo == ModoDigitalizacion.punto,
                   esCapaActiva: digCtrl.capaActivaId == '1',
                   mostrarLapiz: digCtrl.modoEdicion,
@@ -2780,6 +2804,7 @@ class _MapScreenState extends State<MapScreen> {
                     }
                   },
                 ),
+                if (digCtrl.mostrarPuntos) _buildLeyendaCategoriasEstructuras(context, digCtrl),
                 const SizedBox(height: 6),
                 _ItemCapaActiva(
                   icon: Icons.polyline_outlined,
@@ -2900,11 +2925,178 @@ class _MapScreenState extends State<MapScreen> {
       ),
       child: Column(
         children: [
-          _FilaResumen(label: 'Estructuras', valor: '${digCtrl.puntos.length}', color: const Color(0xFF4FC3F7)),
+          _FilaResumen(label: 'Estructuras', valor: '${digCtrl.puntos.length}', color: const Color(0xFF00BFA5)),
           _FilaResumen(label: 'Caminos', valor: '${digCtrl.lineas.length}', color: const Color(0xFFFFB74D)),
           _FilaResumen(label: 'UPMs', valor: '${digCtrl.poligonos.length}', color: const Color(0xFFA5D6A7)),
           const Divider(height: 12),
           _FilaResumen(label: 'Total', valor: '${digCtrl.totalGeometrias}', color: AppTheme.primary),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLeyendaCategoriasEstructuras(BuildContext context, DigitalizacionController digCtrl) {
+    if (digCtrl.puntos.isEmpty) return const SizedBox.shrink();
+
+    final Map<int, int> conteoPorCategoria = {};
+    final Map<int, String?> nombresPorCategoria = {};
+    for (final p in digCtrl.puntos) {
+      conteoPorCategoria[p.idCategoria] = (conteoPorCategoria[p.idCategoria] ?? 0) + 1;
+      if (p.nombreCategoria != null && p.nombreCategoria!.isNotEmpty) {
+        nombresPorCategoria[p.idCategoria] = p.nombreCategoria;
+      }
+    }
+
+    final catIds = conteoPorCategoria.keys.toList()..sort();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 2, bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceVariant.withOpacity(0.65),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF2D4054), width: 0.8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.palette_outlined, size: 13, color: AppTheme.primary),
+              const SizedBox(width: 5),
+              const Expanded(
+                child: Text(
+                  'Leyenda Estructuras',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.primary,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
+              InkWell(
+                onTap: () => _mostrarDialogoCatalogoCompleto(context),
+                child: const Padding(
+                  padding: EdgeInsets.all(2),
+                  child: Icon(Icons.info_outline, size: 14, color: Color(0xFF90A4AE)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ...catIds.map((idCat) {
+            final color = getColorPorCategoriaEstructura(idCat);
+            final nombre = getNombreCategoriaEstructura(idCat, nombreFallback: nombresPorCategoria[idCat]);
+            final count = conteoPorCategoria[idCat] ?? 0;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white70, width: 1),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      nombre,
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        color: AppTheme.onSurface,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.25),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$count',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  void _mostrarDialogoCatalogoCompleto(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.palette_outlined, color: AppTheme.primary, size: 20),
+            SizedBox(width: 8),
+            Text('Catálogo de Colores (Leyenda)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: SizedBox(
+          width: 360,
+          height: 420,
+          child: ListView(
+            children: [
+              const Text(
+                'Colores asignados por categoría (excluyendo rojo y amarillo):',
+                style: TextStyle(fontSize: 12, color: Color(0xFF90A4AE)),
+              ),
+              const SizedBox(height: 10),
+              ...kNombreCategoriasDefault.entries.map((entry) {
+                final color = getColorPorCategoriaEstructura(entry.key);
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 13,
+                        height: 13,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '${entry.key}. ${entry.value}',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cerrar', style: TextStyle(color: AppTheme.primary)),
+          ),
         ],
       ),
     );

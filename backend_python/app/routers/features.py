@@ -2,16 +2,19 @@ import json
 import uuid
 import logging
 import asyncpg
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from app.database import get_db_pool
+from app.security import get_current_active_user
+from app.core.constants import is_admin, normalize_role
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/capas", tags=["Geometrias GeoJSON"])
 
 TABLAS_PERMITIDAS = {"estructuras", "caminos", "upms"}
+TABLAS_GENERICAS = {"estructuras", "caminos"}
 
 # IDs de tipos válidos en cat_estructuras_tipo (1=Formal, 2=Referencia).
 # Si el catálogo crece, actualizar también esta constante o convertirla en
@@ -41,11 +44,150 @@ def parse_int_or_none(val: Any) -> Optional[int]:
         return None
 
 
+# ----------------------------------------------------------------------
+# Endpoints dedicados para UPMs con RBAC y filtro estricto por asignación
+# ----------------------------------------------------------------------
+
+@router.get("/upms/features")
+async def get_upms_features(
+    bbox: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_active_user)
+):
+    """
+    Retorna las UPMs activas en formato GeoJSON FeatureCollection.
+    - Admins: ven todas las UPMs activas.
+    - Supervisores: ven únicamente las UPMs asignadas con rol_asignacion = 'supervisor'.
+    - Cartógrafos (y demás roles no-admin): ven únicamente las asignadas con rol_asignacion = 'cartografo'.
+    """
+    user_role = normalize_role(str(current_user.get("role", "")))
+    user_uuid = uuid.UUID(str(current_user["id"]))
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        where_parts = ["t.deleted_at IS NULL"]
+        args = []
+        arg_idx = 1
+        join_clause = ""
+
+        if not is_admin(user_role):
+            rol_asig = "supervisor" if user_role == "supervisor" else "cartografo"
+            join_clause = f"JOIN asignacion_upms au ON t.id = au.id_upm AND au.rol_asignacion = ${arg_idx} AND au.id_usuario = ${arg_idx+1}"
+            args.extend([rol_asig, user_uuid])
+            arg_idx += 2
+
+        if bbox:
+            try:
+                parts = [float(x) for x in bbox.split(",")]
+                if len(parts) == 4:
+                    where_parts.append(
+                        f"ST_Intersects(t.geom, ST_MakeEnvelope(${arg_idx}, ${arg_idx+1}, ${arg_idx+2}, ${arg_idx+3}, 4326))"
+                    )
+                    args.extend(parts)
+                    arg_idx += 4
+            except Exception:
+                pass
+
+        where_clause = "WHERE " + " AND ".join(where_parts)
+
+        sql = f"""
+        SELECT json_build_object(
+            'type', 'FeatureCollection',
+            'features', COALESCE(json_agg(
+                json_build_object(
+                    'type', 'Feature',
+                    'id', t.id::text,
+                    'geometry', ST_AsGeoJSON(t.geom)::json,
+                    'properties', to_jsonb(t.*) - 'geom'
+                )
+            ), '[]'::json)
+        ) AS geojson
+        FROM upms t
+        {join_clause}
+        {where_clause};
+        """
+        row = await conn.fetchrow(sql, *args)
+        return json.loads(row['geojson'])
+
+
+@router.get("/upms/features/changes")
+async def get_upms_changes(
+    since: str = Query(..., description="ISO 8601 timestamp. Retorna UPMs asignadas modificadas o eliminadas desde esta fecha."),
+    current_user: Dict[str, Any] = Depends(get_current_active_user)
+):
+    """
+    Delta-sync para UPMs asignadas al usuario actual.
+    """
+    user_role = normalize_role(str(current_user.get("role", "")))
+    user_uuid = uuid.UUID(str(current_user["id"]))
+
+    try:
+        since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido. Use ISO 8601 (ej: 2026-08-01T00:00:00Z)")
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        join_clause = ""
+        args = [since_dt]
+
+        if not is_admin(user_role):
+            rol_asig = "supervisor" if user_role == "supervisor" else "cartografo"
+            join_clause = "JOIN asignacion_upms au ON t.id = au.id_upm AND au.rol_asignacion = $2 AND au.id_usuario = $3"
+            args.extend([rol_asig, user_uuid])
+
+        sql = f"""
+        SELECT json_build_object(
+            'type', 'FeatureCollection',
+            'features', COALESCE(json_agg(
+                json_build_object(
+                    'type', 'Feature',
+                    'id', t.id::text,
+                    'geometry', CASE WHEN t.deleted_at IS NULL THEN ST_AsGeoJSON(t.geom)::json ELSE NULL END,
+                    'properties', to_jsonb(t.*) - 'geom',
+                    'deleted', (t.deleted_at IS NOT NULL)
+                )
+            ), '[]'::json)
+        ) AS geojson
+        FROM upms t
+        {join_clause}
+        WHERE t.updated_at > $1;
+        """
+        row = await conn.fetchrow(sql, *args)
+        return json.loads(row['geojson'])
+
+
+@router.get("/upms/count")
+async def get_upms_count(
+    current_user: Dict[str, Any] = Depends(get_current_active_user)
+):
+    """Retorna el conteo de UPMs activas asignadas al usuario."""
+    user_role = normalize_role(str(current_user.get("role", "")))
+    user_uuid = uuid.UUID(str(current_user["id"]))
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        if is_admin(user_role):
+            row = await conn.fetchrow("SELECT COUNT(*) as count FROM upms WHERE deleted_at IS NULL;")
+        else:
+            rol_asig = "supervisor" if user_role == "supervisor" else "cartografo"
+            row = await conn.fetchrow("""
+                SELECT COUNT(DISTINCT t.id) as count 
+                FROM upms t
+                JOIN asignacion_upms au ON t.id = au.id_upm AND au.rol_asignacion = $1 AND au.id_usuario = $2
+                WHERE t.deleted_at IS NULL;
+            """, rol_asig, user_uuid)
+        return {"count": row['count']}
+
 
 @router.get("/{tabla}/features")
 async def get_features(tabla: str, bbox: Optional[str] = None):
-    """Retorna features activos (excluye soft-deleted) como GeoJSON FeatureCollection."""
-    if tabla not in TABLAS_PERMITIDAS:
+    """Retorna features activos (excluye soft-deleted) como GeoJSON FeatureCollection para tablas genéricas."""
+    if tabla == "upms":
+        raise HTTPException(
+            status_code=400,
+            detail="Las UPMs requieren autenticación. Utilice el endpoint autenticado /api/capas/upms/features"
+        )
+    if tabla not in TABLAS_GENERICAS:
         raise HTTPException(status_code=400, detail="Tabla no autorizada")
 
     pool = await get_db_pool()
@@ -117,7 +259,12 @@ async def get_changes(
     Delta-sync: retorna todos los registros (activos y soft-deleted) modificados desde `since`.
     La app usa esto para sincronizar cambios del servidor hacia el dispositivo.
     """
-    if tabla not in TABLAS_PERMITIDAS:
+    if tabla == "upms":
+        raise HTTPException(
+            status_code=400,
+            detail="Las UPMs requieren autenticación. Utilice el endpoint autenticado /api/capas/upms/features/changes"
+        )
+    if tabla not in TABLAS_GENERICAS:
         raise HTTPException(status_code=400, detail="Tabla no autorizada")
 
     try:
@@ -173,7 +320,12 @@ async def get_changes(
 @router.get("/{tabla}/count")
 async def get_count(tabla: str):
     """Retorna el conteo de features activos."""
-    if tabla not in TABLAS_PERMITIDAS:
+    if tabla == "upms":
+        raise HTTPException(
+            status_code=400,
+            detail="Las UPMs requieren autenticación. Utilice el endpoint autenticado /api/capas/upms/count"
+        )
+    if tabla not in TABLAS_GENERICAS:
         raise HTTPException(status_code=400, detail="Tabla no autorizada")
 
     pool = await get_db_pool()

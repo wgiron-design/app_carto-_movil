@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
+import '../services/postgis_service.dart';
 
 class AuthController extends ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -49,6 +50,7 @@ class AuthController extends ChangeNotifier {
     // En inicio, por seguridad no hay sesión activa por defecto hasta que el usuario se loguee
     _isAuthenticated = false;
     _currentUser = null;
+    PostGISService().authToken = null;
     _isCheckingAuth = false;
     notifyListeners();
   }
@@ -78,6 +80,7 @@ class AuthController extends ChangeNotifier {
       final result = await _authService.login(username, password);
       _currentUser = result.user;
       _token = result.token;
+      PostGISService().authToken = _token;
       _isAuthenticated = true;
       // Asegurar que el device_id esté inicializado en el primer login
       await _initDeviceId();
@@ -88,6 +91,7 @@ class AuthController extends ChangeNotifier {
       _errorMessage = e.message;
       _isAuthenticated = false;
       _currentUser = null;
+      PostGISService().authToken = null;
       _isLoading = false;
       notifyListeners();
       return false;
@@ -95,6 +99,7 @@ class AuthController extends ChangeNotifier {
       _errorMessage = 'Ocurrió un error insospechado durante el inicio de sesión.';
       _isAuthenticated = false;
       _currentUser = null;
+      PostGISService().authToken = null;
       _isLoading = false;
       notifyListeners();
       return false;
@@ -258,6 +263,7 @@ class AuthController extends ChangeNotifier {
   void logout() {
     _currentUser = null;
     _token = null;
+    PostGISService().authToken = null;
     _isAuthenticated = false;
     _errorMessage = null;
     _successMessage = null;
