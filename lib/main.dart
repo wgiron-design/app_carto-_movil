@@ -43,15 +43,33 @@ class AuthGate extends StatelessWidget {
     final auth = context.watch<AuthController>();
 
     if (auth.isCheckingAuth) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF121212),
+      return Scaffold(
+        backgroundColor: const Color(0xFF121212),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.map_rounded, size: 64, color: Color(0xFF4FC3F7)),
-              SizedBox(height: 20),
-              CircularProgressIndicator(color: Color(0xFF4FC3F7)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Image.asset(
+                  'assets/images/ine_logo.png',
+                  width: 220,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(height: 28),
+              const CircularProgressIndicator(color: Color(0xFF4FC3F7)),
             ],
           ),
         ),

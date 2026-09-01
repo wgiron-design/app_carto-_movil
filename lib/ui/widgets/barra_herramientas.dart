@@ -58,7 +58,7 @@ class BarraHerramientas extends StatelessWidget {
               icon: Icons.pentagon_outlined,
               tooltip: 'Digitalizar Polígonos (UPM)',
               activo: digCtrl.modo == ModoDigitalizacion.poligono,
-              color: const Color(0xFFA5D6A7), // Verde
+              color: const Color(0xFFFF00FF), // Fucsia
               onTap: () => digCtrl.setModo(ModoDigitalizacion.poligono),
             ),
 

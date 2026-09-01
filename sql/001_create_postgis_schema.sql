@@ -98,5 +98,5 @@ INSERT INTO capas_registro (nombre, tipo_geometria, tabla_origen, icono, color, 
 VALUES 
     ('Estructuras / Puntos', 'POINT', 'estructuras', 'place_outlined', '#4FC3F7', true, 1),
     ('Caminos / Líneas', 'LINESTRING', 'caminos', 'polyline_outlined', '#FFB74D', true, 2),
-    ('UPMs / Polígonos', 'POLYGON', 'upms', 'pentagon_outlined', '#A5D6A7', true, 3)
+    ('UPMs / Polígonos', 'POLYGON', 'upms', 'pentagon_outlined', '#FF00FF', true, 3)
 ON CONFLICT (tabla_origen) DO NOTHING;

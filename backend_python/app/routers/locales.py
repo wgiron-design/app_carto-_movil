@@ -11,6 +11,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/locales", tags=["Locales"])
 
 class LocalCreateSchema(BaseModel):
+    id: Optional[str] = None
+    nombre_local: Optional[str] = Field(default=None, max_length=100)
+    id_tipo: int
+    id_condicion_local: Optional[int] = None
+    numero_hogares: Optional[int] = Field(default=None, ge=1)
+    descripcion: Optional[str] = Field(default=None, max_length=150)
+
+class LocalCreateDirectSchema(BaseModel):
+    id: Optional[str] = None
+    nivel_id: str
     nombre_local: Optional[str] = Field(default=None, max_length=100)
     id_tipo: int
     id_condicion_local: Optional[int] = None
@@ -25,16 +35,46 @@ class LocalPatchSchema(BaseModel):
     descripcion: Optional[str] = Field(default=None, max_length=150)
 
 
+async def _asegurar_nivel_existente(conn, clean_nid: str) -> Dict[str, Any]:
+    """
+    Asegura que el nivel exista en PostgreSQL.
+    Si el nivel fue creado en el cliente móvil y aún no se sincroniza a la base central,
+    inserta un registro base para mantener la integridad referencial.
+    """
+    nivel_row = await conn.fetchrow(
+        "SELECT id::text, numero, numero_locales FROM niveles WHERE id = $1::uuid FOR UPDATE",
+        clean_nid
+    )
+    if not nivel_row:
+        dummy_est_id = "00000000-0000-0000-0000-000000000001"
+        await conn.execute("""
+            INSERT INTO estructuras (id, geom, nombre, id_categoria, id_tipo, estado, niveles_cantidad, sync_version)
+            VALUES ($1::uuid, ST_SetSRID(ST_MakePoint(-90.5, 14.6), 4326), 'Estructura', 1, 1, 'presente', 10, 0)
+            ON CONFLICT (id) DO UPDATE SET deleted_at = NULL
+        """, dummy_est_id)
+        await conn.execute("""
+            INSERT INTO niveles (id, estructura_id, numero, numero_locales, updated_at)
+            VALUES ($1::uuid, $2::uuid, 1, 10, NOW())
+            ON CONFLICT (id) DO NOTHING
+        """, clean_nid, dummy_est_id)
+        nivel_row = await conn.fetchrow(
+            "SELECT id::text, numero, numero_locales FROM niveles WHERE id = $1::uuid FOR UPDATE",
+            clean_nid
+        )
+    return dict(nivel_row) if nivel_row else {"id": clean_nid, "numero": 1, "numero_locales": 10}
+
+
 @router.get("/nivel/{nivel_id}")
 async def get_locales_by_nivel(nivel_id: str):
     """
     Obtiene la lista de locales pertenecientes a un nivel con detalles de sus catálogos.
+    Si el nivel aún no existe en PostgreSQL, devuelve una lista vacía en vez de 404.
     """
     clean_nid = parse_uuid_or_none(nivel_id)
     if not clean_nid:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": "nivel_no_encontrado", "message": "El nivel especificado no existe"}
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "id_invalido", "message": "El ID de nivel no tiene formato UUID válido"}
         )
 
     pool = await get_db_pool()
@@ -44,10 +84,13 @@ async def get_locales_by_nivel(nivel_id: str):
             clean_nid
         )
         if not nivel_row:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={"error": "nivel_no_encontrado", "message": "El nivel especificado no existe"}
-            )
+            return {
+                "nivel_id": clean_nid,
+                "numero_nivel": 1,
+                "numero_locales_esperados": 1,
+                "locales_registrados": 0,
+                "locales": []
+            }
 
         sql = """
         SELECT 
@@ -74,7 +117,7 @@ async def get_locales_by_nivel(nivel_id: str):
         locales_list = []
         for r in rows:
             item = dict(r)
-            if item['updated_at']:
+            if item.get('updated_at'):
                 item['updated_at'] = item['updated_at'].isoformat()
             locales_list.append(item)
 
@@ -87,6 +130,66 @@ async def get_locales_by_nivel(nivel_id: str):
         }
 
 
+@router.get("")
+@router.get("/")
+async def list_or_filter_locales(nivel_id: Optional[str] = None):
+    """
+    Lista todos los locales o filtra por nivel_id si se pasa como query parameter.
+    """
+    if nivel_id:
+        return await get_locales_by_nivel(nivel_id)
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT 
+                l.id::text, l.nivel_id::text, l.nombre_local, l.id_tipo, l.id_condicion_local,
+                l.numero_hogares, l.descripcion, l.updated_at
+            FROM locales l
+            ORDER BY l.updated_at ASC
+        """)
+        locales_list = []
+        for r in rows:
+            item = dict(r)
+            if item.get('updated_at'):
+                item['updated_at'] = item['updated_at'].isoformat()
+            locales_list.append(item)
+        return locales_list
+
+
+@router.get("/{local_id}")
+async def get_local_by_id(local_id: str):
+    """
+    Obtiene la información de un local específico.
+    """
+    clean_lid = parse_uuid_or_none(local_id)
+    if not clean_lid:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "local_no_encontrado", "message": "El local especificado no existe"}
+        )
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("""
+            SELECT 
+                l.id::text, l.nivel_id::text, l.nombre_local, l.id_tipo, t.nombre as nombre_tipo,
+                l.id_condicion_local, c.nombre as nombre_condicion, l.numero_hogares, l.descripcion, l.updated_at
+            FROM locales l
+            LEFT JOIN cat_locales_tipo t ON t.id = l.id_tipo
+            LEFT JOIN cat_locales_condicion c ON c.id = l.id_condicion_local
+            WHERE l.id = $1::uuid
+        """, clean_lid)
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error": "local_no_encontrado", "message": "El local especificado no existe"}
+            )
+        res = dict(row)
+        if res.get('updated_at'):
+            res['updated_at'] = res['updated_at'].isoformat()
+        return res
+
+
 @router.post("/nivel/{nivel_id}", status_code=status.HTTP_201_CREATED)
 async def create_local(nivel_id: str, payload: LocalCreateSchema):
     """
@@ -96,24 +199,16 @@ async def create_local(nivel_id: str, payload: LocalCreateSchema):
     clean_nid = parse_uuid_or_none(nivel_id)
     if not clean_nid:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": "nivel_no_encontrado", "message": "El nivel especificado no existe"}
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "id_invalido", "message": "El ID de nivel no tiene formato UUID válido"}
         )
 
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
-            nivel_row = await conn.fetchrow(
-                "SELECT id::text, numero_locales FROM niveles WHERE id = $1::uuid FOR UPDATE",
-                clean_nid
-            )
-            if not nivel_row:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail={"error": "nivel_no_encontrado", "message": "El nivel especificado no existe"}
-                )
+            nivel_data = await _asegurar_nivel_existente(conn, clean_nid)
+            max_locales = nivel_data.get('numero_locales') or 10
 
-            max_locales = nivel_row['numero_locales'] or 1
             count_actual = await conn.fetchval(
                 "SELECT COUNT(*) FROM locales WHERE nivel_id = $1::uuid",
                 clean_nid
@@ -149,13 +244,22 @@ async def create_local(nivel_id: str, payload: LocalCreateSchema):
                         detail={"error": "condicion_invalida", "message": f"El id_condicion_local {payload.id_condicion_local} no existe."}
                     )
 
+            clean_lid = parse_uuid_or_none(payload.id)
             insert_sql = """
-            INSERT INTO locales (nivel_id, nombre_local, id_tipo, id_condicion_local, numero_hogares, descripcion, updated_at)
-            VALUES ($1::uuid, $2, $3, $4, $5, $6, NOW())
+            INSERT INTO locales (id, nivel_id, nombre_local, id_tipo, id_condicion_local, numero_hogares, descripcion, updated_at)
+            VALUES (COALESCE($1::uuid, uuid_generate_v4()), $2::uuid, $3, $4, $5, $6, $7, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                nombre_local = EXCLUDED.nombre_local,
+                id_tipo = EXCLUDED.id_tipo,
+                id_condicion_local = EXCLUDED.id_condicion_local,
+                numero_hogares = EXCLUDED.numero_hogares,
+                descripcion = EXCLUDED.descripcion,
+                updated_at = NOW()
             RETURNING id::text, nivel_id::text, nombre_local, id_tipo, id_condicion_local, numero_hogares, descripcion, updated_at;
             """
             row = await conn.fetchrow(
                 insert_sql,
+                clean_lid,
                 clean_nid,
                 payload.nombre_local,
                 payload.id_tipo,
@@ -164,9 +268,26 @@ async def create_local(nivel_id: str, payload: LocalCreateSchema):
                 payload.descripcion
             )
             res = dict(row)
-            if res['updated_at']:
+            if res.get('updated_at'):
                 res['updated_at'] = res['updated_at'].isoformat()
             return res
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED)
+async def create_local_direct(payload: LocalCreateDirectSchema):
+    """
+    Endpoint directo para crear local recibiendo nivel_id en el cuerpo de la petición.
+    """
+    schema = LocalCreateSchema(
+        id=payload.id,
+        nombre_local=payload.nombre_local,
+        id_tipo=payload.id_tipo,
+        id_condicion_local=payload.id_condicion_local,
+        numero_hogares=payload.numero_hogares,
+        descripcion=payload.descripcion
+    )
+    return await create_local(payload.nivel_id, schema)
 
 
 @router.patch("/{local_id}")
@@ -184,10 +305,7 @@ async def patch_local(local_id: str, payload: LocalPatchSchema):
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
-            local_row = await conn.fetchrow(
-                "SELECT id::text FROM locales WHERE id = $1::uuid FOR UPDATE",
-                clean_lid
-            )
+            local_row = await conn.fetchrow("SELECT id::text FROM locales WHERE id = $1::uuid FOR UPDATE", clean_lid)
             if not local_row:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -248,7 +366,7 @@ async def patch_local(local_id: str, payload: LocalPatchSchema):
             """
             row = await conn.fetchrow(update_sql, *args)
             res = dict(row)
-            if res['updated_at']:
+            if res.get('updated_at'):
                 res['updated_at'] = res['updated_at'].isoformat()
             return res
 

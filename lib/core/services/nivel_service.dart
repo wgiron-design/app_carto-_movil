@@ -43,9 +43,9 @@ class NivelResumen {
       numeroLocales: (json['numero_locales'] as num).toInt(),
       descripcion: json['descripcion'] as String?,
       updatedAt: DateTime.parse(json['updated_at'] as String),
-      localesRegistrados: (json['locales_registrados'] as num).toInt(),
-      hogaresRegistrados: (json['hogares_registrados'] as num).toInt(),
-      personasRegistradas: (json['personas_registradas'] as num).toInt(),
+      localesRegistrados: ((json['locales_registrados'] ?? 0) as num).toInt(),
+      hogaresRegistrados: ((json['hogares_registrados'] ?? 0) as num).toInt(),
+      personasRegistradas: ((json['personas_registradas'] ?? 0) as num).toInt(),
     );
   }
 
@@ -176,8 +176,12 @@ class NivelService {
         final nivel = Nivel.fromJson(data);
         await DatabaseHelper().insertEntity('niveles', nivel.toMapDB());
         return nivel;
+      } else if (response.statusCode == 409 || response.statusCode == 422) {
+        _handleError(response);
       }
-    } catch (_) {}
+    } catch (e) {
+      if (e is NivelApiException) rethrow;
+    }
 
     // Fallback SQLite
     final db = await DatabaseHelper().database;
@@ -211,8 +215,12 @@ class NivelService {
         final nivel = Nivel.fromJson(data);
         await DatabaseHelper().insertEntity('niveles', nivel.toMapDB());
         return nivel;
+      } else if (response.statusCode == 409 || response.statusCode == 422) {
+        _handleError(response);
       }
-    } catch (_) {}
+    } catch (e) {
+      if (e is NivelApiException) rethrow;
+    }
 
     // Fallback SQLite
     final db = await DatabaseHelper().database;

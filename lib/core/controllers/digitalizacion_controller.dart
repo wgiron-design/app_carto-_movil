@@ -58,7 +58,7 @@ class DigitalizacionController extends ChangeNotifier {
   List<CapaRegistro> _capasRegistro = [
     CapaRegistro(id: '1', nombre: 'Estructuras / Puntos', tipoGeometria: 'POINT', tablaOrigen: 'estructuras', icono: 'place_outlined', color: '#4FC3F7', activa: true, ordenVisualizacion: 1),
     CapaRegistro(id: '2', nombre: 'Caminos / Líneas', tipoGeometria: 'LINESTRING', tablaOrigen: 'caminos', icono: 'polyline_outlined', color: '#FFB74D', activa: true, ordenVisualizacion: 2),
-    CapaRegistro(id: '3', nombre: 'UPMs / Polígonos', tipoGeometria: 'POLYGON', tablaOrigen: 'upms', icono: 'pentagon_outlined', color: '#A5D6A7', activa: true, ordenVisualizacion: 3),
+    CapaRegistro(id: '3', nombre: 'UPMs / Polígonos', tipoGeometria: 'POLYGON', tablaOrigen: 'upms', icono: 'pentagon_outlined', color: '#FF00FF', activa: true, ordenVisualizacion: 3),
   ];
   List<CapaRegistro> get capasRegistro => UnmodifiableListView(_capasRegistro);
 

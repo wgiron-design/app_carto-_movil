@@ -47,6 +47,8 @@ class _MapScreenState extends State<MapScreen> {
   double _zoomActual = 10.0;
   bool _guardando = false;
   bool _cargando = false;
+  /// Controla si la leyenda de categorías de estructuras está plegada (tipo SIG)
+  bool _leyendaEstructurasPlegada = false;
   /// Controla si el botón ℹ️ está activo (mostrar info al tocar elementos)
   bool _modoInfoActivo = false;
   /// Catálogo de tipos (Formal/Referencia) cargado al iniciar.
@@ -744,9 +746,9 @@ class _MapScreenState extends State<MapScreen> {
               : (esAusente ? const Color(0xFFEF5350) : colorCat);
 
           final circleSize = (seleccionado || esModoEditarPunto) ? 48.0 : 36.0;
-          final textoEtiqueta = punto.idEstructuraUser != null
+          final textoEtiqueta = (punto.idEstructuraUser != null && punto.idEstructuraUser.toString().isNotEmpty)
               ? '${punto.idEstructuraUser}'
-              : (punto.nombre.trim().isNotEmpty ? punto.nombre.trim() : '');
+              : punto.nombre.trim();
           final mostrarEtiqueta = textoEtiqueta.isNotEmpty;
 
           final iconWidget = esModoEditarPunto
@@ -846,12 +848,16 @@ class _MapScreenState extends State<MapScreen> {
                           fontWeight: FontWeight.w900,
                           letterSpacing: -0.3,
                           shadows: [
-                            Shadow(offset: Offset(-1, -1), blurRadius: 1.5, color: Colors.white),
-                            Shadow(offset: Offset(1, -1), blurRadius: 1.5, color: Colors.white),
-                            Shadow(offset: Offset(-1, 1), blurRadius: 1.5, color: Colors.white),
-                            Shadow(offset: Offset(1, 1), blurRadius: 1.5, color: Colors.white),
-                            Shadow(offset: Offset(0, 0), blurRadius: 3.5, color: Colors.white),
-                            Shadow(offset: Offset(0, 0), blurRadius: 5.5, color: Colors.white),
+                            Shadow(offset: Offset(-1.5, -1.5), blurRadius: 2.0, color: Colors.white),
+                            Shadow(offset: Offset(1.5, -1.5), blurRadius: 2.0, color: Colors.white),
+                            Shadow(offset: Offset(-1.5, 1.5), blurRadius: 2.0, color: Colors.white),
+                            Shadow(offset: Offset(1.5, 1.5), blurRadius: 2.0, color: Colors.white),
+                            Shadow(offset: Offset(-1.5, 0), blurRadius: 2.0, color: Colors.white),
+                            Shadow(offset: Offset(1.5, 0), blurRadius: 2.0, color: Colors.white),
+                            Shadow(offset: Offset(0, -1.5), blurRadius: 2.0, color: Colors.white),
+                            Shadow(offset: Offset(0, 1.5), blurRadius: 2.0, color: Colors.white),
+                            Shadow(color: Colors.white, blurRadius: 6, offset: Offset(0, 0)),
+                            Shadow(color: Colors.white, blurRadius: 10, offset: Offset(0, 0)),
                           ],
                         ),
                         textAlign: TextAlign.center,
@@ -942,12 +948,16 @@ class _MapScreenState extends State<MapScreen> {
                   fontWeight: FontWeight.w800,
                   letterSpacing: 0.2,
                   shadows: const [
-                    Shadow(offset: Offset(-1, -1), blurRadius: 2, color: Colors.white),
-                    Shadow(offset: Offset(1, -1), blurRadius: 2, color: Colors.white),
-                    Shadow(offset: Offset(-1, 1), blurRadius: 2, color: Colors.white),
-                    Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.white),
+                    Shadow(offset: Offset(-1.5, -1.5), blurRadius: 2, color: Colors.white),
+                    Shadow(offset: Offset(1.5, -1.5), blurRadius: 2, color: Colors.white),
+                    Shadow(offset: Offset(-1.5, 1.5), blurRadius: 2, color: Colors.white),
+                    Shadow(offset: Offset(1.5, 1.5), blurRadius: 2, color: Colors.white),
+                    Shadow(offset: Offset(-1.5, 0), blurRadius: 2, color: Colors.white),
+                    Shadow(offset: Offset(1.5, 0), blurRadius: 2, color: Colors.white),
+                    Shadow(offset: Offset(0, -1.5), blurRadius: 2, color: Colors.white),
+                    Shadow(offset: Offset(0, 1.5), blurRadius: 2, color: Colors.white),
                     Shadow(offset: Offset(0, 0), blurRadius: 4, color: Colors.white),
-                    Shadow(offset: Offset(0, 0), blurRadius: 6, color: Colors.white),
+                    Shadow(offset: Offset(0, 0), blurRadius: 8, color: Colors.white),
                   ],
                 ),
                 maxLines: 1,
@@ -969,25 +979,30 @@ class _MapScreenState extends State<MapScreen> {
         return Polygon(
           points: poligono.vertices,
           color: seleccionado
-              ? const Color(0xFFFFD600).withValues(alpha: 0.2)
-              : const Color(0xFFA5D6A7).withValues(alpha: 0.2),
+              ? const Color(0xFFFFD600).withValues(alpha: 0.25)
+              : Colors.transparent,
           borderColor: seleccionado
               ? const Color(0xFFFFD600)
-              : const Color(0xFFA5D6A7),
-          borderStrokeWidth: seleccionado ? 3.0 : 1.5,
+              : const Color(0xFFFF00FF),
+          borderStrokeWidth: seleccionado ? 3.5 : 2.5,
           label: poligono.codigoUPM.isNotEmpty
               ? poligono.codigoUPM
               : poligono.nombre,
           labelStyle: const TextStyle(
-            color: Colors.black,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
+            color: Color(0xFFFF00FF),
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
             shadows: [
-              Shadow(offset: Offset(-1, -1), blurRadius: 2, color: Colors.white),
-              Shadow(offset: Offset(1, -1), blurRadius: 2, color: Colors.white),
-              Shadow(offset: Offset(-1, 1), blurRadius: 2, color: Colors.white),
-              Shadow(offset: Offset(1, 1), blurRadius: 2, color: Colors.white),
+              Shadow(offset: Offset(-1.5, -1.5), blurRadius: 2, color: Colors.white),
+              Shadow(offset: Offset(1.5, -1.5), blurRadius: 2, color: Colors.white),
+              Shadow(offset: Offset(-1.5, 1.5), blurRadius: 2, color: Colors.white),
+              Shadow(offset: Offset(1.5, 1.5), blurRadius: 2, color: Colors.white),
+              Shadow(offset: Offset(-1.5, 0), blurRadius: 2, color: Colors.white),
+              Shadow(offset: Offset(1.5, 0), blurRadius: 2, color: Colors.white),
+              Shadow(offset: Offset(0, -1.5), blurRadius: 2, color: Colors.white),
+              Shadow(offset: Offset(0, 1.5), blurRadius: 2, color: Colors.white),
               Shadow(offset: Offset(0, 0), blurRadius: 4, color: Colors.white),
+              Shadow(offset: Offset(0, 0), blurRadius: 8, color: Colors.white),
             ],
           ),
         );
@@ -1017,9 +1032,9 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     final colorFill = autoIntersecta
-        ? AppTheme.error.withOpacity(0.3)
-        : const Color(0xFF4CAF50).withOpacity(0.3);
-    final colorBorder = autoIntersecta ? AppTheme.error : const Color(0xFF4CAF50);
+        ? AppTheme.error.withValues(alpha: 0.3)
+        : const Color(0xFFFF00FF).withValues(alpha: 0.15);
+    final colorBorder = autoIntersecta ? AppTheme.error : const Color(0xFFFF00FF);
 
     return PolygonLayer(
       polygons: [
@@ -1086,7 +1101,7 @@ class _MapScreenState extends State<MapScreen> {
                 shape: BoxShape.circle,
                 color: esVerticeEnDrag
                     ? (digCtrl.dragPoligonoAutoIntersecta ? AppTheme.error : const Color(0xFFE53935))
-                    : const Color(0xFF4CAF50),
+                    : const Color(0xFFFF00FF),
                 border: Border.all(color: Colors.white, width: 2.0),
                 boxShadow: [
                   BoxShadow(
@@ -1132,9 +1147,9 @@ class _MapScreenState extends State<MapScreen> {
       polygons: [
         Polygon(
           points: [...puntos, puntos.first], // cerrarlo visualmente
-          color: const Color(0xFF66BB6A).withOpacity(0.15),
-          borderColor: const Color(0xFF66BB6A),
-          borderStrokeWidth: 1.5,
+          color: const Color(0xFFFF00FF).withValues(alpha: 0.15),
+          borderColor: const Color(0xFFFF00FF),
+          borderStrokeWidth: 2.5,
         ),
       ],
     );
@@ -1287,6 +1302,9 @@ class _MapScreenState extends State<MapScreen> {
 
       // Persistir actualización de atributos
       await digCtrl.actualizarPunto(puntoActualizado);
+
+      // Enviar a PostGIS en segundo plano para registrar inmediatamente en el backend
+      PostGISService().guardarFeature('estructuras', puntoActualizado.toGeoJson()).catchError((_) => false);
 
       // ── PASO 4: Navegar a JerarquiaScreen ────────────────────────────────
       if (!mounted) return;
@@ -1967,7 +1985,7 @@ class _MapScreenState extends State<MapScreen> {
 
             Row(
               children: [
-                const Text('⬢', style: TextStyle(fontSize: 28, color: Color(0xFFA5D6A7))),
+                const Text('⬢', style: TextStyle(fontSize: 28, color: Color(0xFFFF00FF))),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -1986,7 +2004,7 @@ class _MapScreenState extends State<MapScreen> {
                             ? 'UPM: ${poligono.codigoUPM}'
                             : 'Polígono / UPM',
                         style: const TextStyle(
-                          color: Color(0xFFA5D6A7),
+                          color: Color(0xFFFF00FF),
                           fontSize: 13,
                         ),
                       ),
@@ -2001,7 +2019,7 @@ class _MapScreenState extends State<MapScreen> {
             const SizedBox(height: 12),
 
             Row(children: [
-              const Icon(Icons.square_foot, size: 14, color: Color(0xFFA5D6A7)),
+              const Icon(Icons.square_foot, size: 14, color: Color(0xFFFF00FF)),
               const SizedBox(width: 6),
               Text(
                 'Área: ${poligono.areaMetrosCuadrados.toStringAsFixed(1)} m²  ·  ${poligono.vertices.length} vértices',
@@ -2017,7 +2035,7 @@ class _MapScreenState extends State<MapScreen> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.notes, size: 14, color: Color(0xFFA5D6A7)),
+                  const Icon(Icons.notes, size: 14, color: Color(0xFFFF00FF)),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -2183,7 +2201,7 @@ class _MapScreenState extends State<MapScreen> {
         ),
       ModoDigitalizacion.poligono => (
           '🗺️ Modo: Polígono',
-          const Color(0xFFA5D6A7),
+          const Color(0xFFFF00FF),
           digCtrl.verticesEnConstruccion.isEmpty
               ? 'Mueva el mapa y use el botón ➕ para agregar nodos'
               : '${digCtrl.verticesEnConstruccion.length} nodos · Use ➕ para agregar · ✔ para finalizar',
@@ -2797,6 +2815,9 @@ class _MapScreenState extends State<MapScreen> {
                   mostrarLapiz: digCtrl.modoEdicion,
                   visible: digCtrl.mostrarPuntos,
                   onToggleVisibilidad: () => digCtrl.toggleMostrarPuntos(),
+                  expandible: digCtrl.puntos.isNotEmpty,
+                  expandido: !_leyendaEstructurasPlegada,
+                  onToggleExpandir: () => setState(() => _leyendaEstructurasPlegada = !_leyendaEstructurasPlegada),
                   onTap: () {
                     digCtrl.setCapaActiva('1');
                     if (digCtrl.modoEdicion) {
@@ -2828,7 +2849,7 @@ class _MapScreenState extends State<MapScreen> {
                   icon: Icons.pentagon_outlined,
                   label: 'Polígonos / UPM',
                   count: digCtrl.poligonos.length,
-                  color: const Color(0xFFA5D6A7),
+                  color: const Color(0xFFFF00FF),
                   activo: digCtrl.modo == ModoDigitalizacion.poligono,
                   esCapaActiva: digCtrl.capaActivaId == '3',
                   mostrarLapiz: digCtrl.modoEdicion,
@@ -2927,7 +2948,7 @@ class _MapScreenState extends State<MapScreen> {
         children: [
           _FilaResumen(label: 'Estructuras', valor: '${digCtrl.puntos.length}', color: const Color(0xFF00BFA5)),
           _FilaResumen(label: 'Caminos', valor: '${digCtrl.lineas.length}', color: const Color(0xFFFFB74D)),
-          _FilaResumen(label: 'UPMs', valor: '${digCtrl.poligonos.length}', color: const Color(0xFFA5D6A7)),
+          _FilaResumen(label: 'UPMs', valor: '${digCtrl.poligonos.length}', color: const Color(0xFFFF00FF)),
           const Divider(height: 12),
           _FilaResumen(label: 'Total', valor: '${digCtrl.totalGeometrias}', color: AppTheme.primary),
         ],
@@ -2949,92 +2970,142 @@ class _MapScreenState extends State<MapScreen> {
 
     final catIds = conteoPorCategoria.keys.toList()..sort();
 
-    return Container(
-      margin: const EdgeInsets.only(top: 2, bottom: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.only(top: 2, bottom: 4, left: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: AppTheme.surfaceVariant.withOpacity(0.65),
+        color: AppTheme.surfaceVariant.withValues(alpha: 0.65),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFF2D4054), width: 0.8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.palette_outlined, size: 13, color: AppTheme.primary),
-              const SizedBox(width: 5),
-              const Expanded(
-                child: Text(
-                  'Leyenda Estructuras',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.primary,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-              ),
-              InkWell(
-                onTap: () => _mostrarDialogoCatalogoCompleto(context),
-                child: const Padding(
-                  padding: EdgeInsets.all(2),
-                  child: Icon(Icons.info_outline, size: 14, color: Color(0xFF90A4AE)),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          ...catIds.map((idCat) {
-            final color = getColorPorCategoriaEstructura(idCat);
-            final nombre = getNombreCategoriaEstructura(idCat, nombreFallback: nombresPorCategoria[idCat]);
-            final count = conteoPorCategoria[idCat] ?? 0;
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
+          // Barra de cabecera con botón de plegado tipo SIG
+          InkWell(
+            onTap: () => setState(() => _leyendaEstructurasPlegada = !_leyendaEstructurasPlegada),
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
               child: Row(
                 children: [
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white70, width: 1),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      nombre,
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        color: AppTheme.onSurface,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                  AnimatedRotation(
+                    turns: _leyendaEstructurasPlegada ? 0.0 : 0.25,
+                    duration: const Duration(milliseconds: 180),
+                    child: const Icon(
+                      Icons.arrow_right,
+                      size: 18,
+                      color: AppTheme.primary,
                     ),
                   ),
                   const SizedBox(width: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.25),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                  const Icon(Icons.palette_outlined, size: 12, color: AppTheme.primary),
+                  const SizedBox(width: 5),
+                  Expanded(
                     child: Text(
-                      '$count',
-                      style: TextStyle(
-                        fontSize: 9.5,
+                      _leyendaEstructurasPlegada
+                          ? 'Leyenda (${catIds.length} cat.)'
+                          : 'Leyenda Estructuras',
+                      style: const TextStyle(
+                        fontSize: 10.5,
                         fontWeight: FontWeight.w700,
-                        color: color,
+                        color: AppTheme.primary,
+                        letterSpacing: 0.3,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Tooltip(
+                    message: _leyendaEstructurasPlegada ? 'Desplegar leyenda' : 'Plegar leyenda',
+                    child: Icon(
+                      _leyendaEstructurasPlegada ? Icons.expand_more : Icons.expand_less,
+                      size: 15,
+                      color: const Color(0xFF90A4AE),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  InkWell(
+                    onTap: () => _mostrarDialogoCatalogoCompleto(context),
+                    child: const Tooltip(
+                      message: 'Ver catálogo completo',
+                      child: Padding(
+                        padding: EdgeInsets.all(2),
+                        child: Icon(Icons.info_outline, size: 14, color: Color(0xFF90A4AE)),
                       ),
                     ),
                   ),
                 ],
               ),
-            );
-          }),
+            ),
+          ),
+          // Sub-elementos de la leyenda con animación colapsable
+          AnimatedCrossFade(
+            firstChild: const SizedBox.shrink(),
+            secondChild: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 4),
+                const Divider(height: 6, color: Color(0xFF2D4054)),
+                const SizedBox(height: 2),
+                ...catIds.map((idCat) {
+                  final color = getColorPorCategoriaEstructura(idCat);
+                  final nombre = getNombreCategoriaEstructura(idCat, nombreFallback: nombresPorCategoria[idCat]);
+                  final count = conteoPorCategoria[idCat] ?? 0;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2.5),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 4),
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white70, width: 1),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            nombre,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: AppTheme.onSurface,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.25),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$count',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                              color: color,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
+            crossFadeState: _leyendaEstructurasPlegada
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
+            duration: const Duration(milliseconds: 200),
+          ),
         ],
       ),
     );
@@ -3339,6 +3410,10 @@ class _ItemCapaActiva extends StatelessWidget {
   final bool visible;
   final VoidCallback? onToggleVisibilidad;
   final VoidCallback onTap;
+  final bool expandible;
+  final bool expandido;
+  final VoidCallback? onToggleExpandir;
+
   const _ItemCapaActiva({
     required this.icon,
     required this.label,
@@ -3350,6 +3425,9 @@ class _ItemCapaActiva extends StatelessWidget {
     this.visible = true,
     this.onToggleVisibilidad,
     required this.onTap,
+    this.expandible = false,
+    this.expandido = false,
+    this.onToggleExpandir,
   });
 
   @override
@@ -3372,6 +3450,24 @@ class _ItemCapaActiva extends StatelessWidget {
           ),
         ),
         child: Row(children: [
+          if (expandible) ...[
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onToggleExpandir,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: AnimatedRotation(
+                  turns: expandido ? 0.25 : 0.0,
+                  duration: const Duration(milliseconds: 180),
+                  child: const Icon(
+                    Icons.arrow_right,
+                    size: 18,
+                    color: Colors.white70,
+                  ),
+                ),
+              ),
+            ),
+          ],
           Icon(icon, size: 16, color: esCapaActiva ? const Color(0xFF81C784) : (activo ? color : AppTheme.onSurface.withOpacity(0.6))),
           const SizedBox(width: 8),
           Expanded(child: Text(label, style: TextStyle(color: esCapaActiva ? const Color(0xFF81C784) : (activo ? color : AppTheme.onSurface), fontSize: 12, fontWeight: (esCapaActiva || activo) ? FontWeight.w600 : FontWeight.normal))),

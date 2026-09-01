@@ -162,13 +162,29 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Header Logo & Title
-                      const Icon(
-                        Icons.map_rounded,
-                        size: 56,
-                        color: Color(0xFF4FC3F7),
+                      // Header Logo Institucional INE
+                      Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.25),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: Image.asset(
+                            'assets/images/ine_logo.png',
+                            height: 56,
+                            fit: BoxFit.contain,
+                          ),
+                        ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 18),
                       Text(
                         'CartoDigital',
                         textAlign: TextAlign.center,

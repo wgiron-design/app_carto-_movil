@@ -268,7 +268,7 @@ class PanelEdicionPoligono extends StatelessWidget {
         color: AppTheme.surface.withOpacity(0.95),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: (autoIntersecta ? AppTheme.error : const Color(0xFFA5D6A7)).withOpacity(0.5),
+          color: (autoIntersecta ? AppTheme.error : const Color(0xFFFF00FF)).withOpacity(0.5),
           width: 1.5,
         ),
         boxShadow: [
@@ -293,7 +293,7 @@ class PanelEdicionPoligono extends StatelessWidget {
             style: TextStyle(
               color: autoIntersecta
                   ? AppTheme.error
-                  : (digCtrl.modoAgregarVertice ? const Color(0xFF26C6DA) : const Color(0xFFA5D6A7)),
+                  : (digCtrl.modoAgregarVertice ? const Color(0xFF26C6DA) : const Color(0xFFFF00FF)),
               fontSize: 13,
               fontWeight: FontWeight.bold,
             ),

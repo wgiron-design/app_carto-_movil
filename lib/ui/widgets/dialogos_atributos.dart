@@ -719,7 +719,7 @@ class _DialogoAtributosPoligonoState extends State<DialogoAtributosPoligono> {
               subtitulo:
                   '${widget.numVertices} vértices · '
                   '${areaHa.toStringAsFixed(4)} ha',
-              color: const Color(0xFFA5D6A7),
+              color: const Color(0xFFFF00FF),
             ),
             Padding(
               padding: const EdgeInsets.all(20),

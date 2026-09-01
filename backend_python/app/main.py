@@ -52,6 +52,7 @@ app.include_router(features.router)
 app.include_router(sync.router)
 app.include_router(admin.router)
 app.include_router(niveles.router)
+app.include_router(niveles.estructuras_niveles_router)
 app.include_router(locales.router)
 app.include_router(hogares.router)
 
