@@ -16,6 +16,7 @@ class NivelCreateSchema(BaseModel):
     numero: Optional[int] = None
     numero_locales: int = Field(default=1, ge=1)
     descripcion: Optional[str] = Field(default=None, max_length=50)
+    niveles_cantidad: Optional[int] = Field(default=None, ge=1)
 
 class NivelCreateDirectSchema(BaseModel):
     id: Optional[str] = None
@@ -23,16 +24,24 @@ class NivelCreateDirectSchema(BaseModel):
     numero: Optional[int] = None
     numero_locales: int = Field(default=1, ge=1)
     descripcion: Optional[str] = Field(default=None, max_length=50)
+    niveles_cantidad: Optional[int] = Field(default=None, ge=1)
 
 class NivelPatchSchema(BaseModel):
     numero_locales: Optional[int] = Field(default=None, ge=1)
     descripcion: Optional[str] = Field(default=None, max_length=50)
 
+    def get_descripcion_normalizada(self):
+        """Retorna la descripción normalizada: string vacío -> None, resto truncado a 50 chars."""
+        if self.descripcion is None:
+            return None
+        stripped = self.descripcion.strip()
+        return None if stripped == '' else stripped[:50]
+
 class ConfirmDeleteSchema(BaseModel):
     numero_locales_nuevo: int = Field(..., ge=1)
 
 
-async def _asegurar_estructura_existente(conn, clean_eid: str) -> Dict[str, Any]:
+async def _asegurar_estructura_existente(conn, clean_eid: str, niveles_cantidad: Optional[int] = None) -> Dict[str, Any]:
     """
     Verifica que la estructura exista en PostgreSQL.
     Si fue creada recientemente en el cliente móvil y aún no se ha sincronizado,
@@ -40,6 +49,7 @@ async def _asegurar_estructura_existente(conn, clean_eid: str) -> Dict[str, Any]
     evitar errores 404 que impidan el registro de niveles.
     Los IDs de catálogo se consultan dinámicamente para evitar violaciones de FK.
     """
+    cant_default = niveles_cantidad if (niveles_cantidad and niveles_cantidad >= 1) else 1
     est_row = await conn.fetchrow(
         "SELECT id::text, nombre, niveles_cantidad FROM estructuras WHERE id = $1::uuid AND deleted_at IS NULL FOR UPDATE",
         clean_eid
@@ -60,7 +70,7 @@ async def _asegurar_estructura_existente(conn, clean_eid: str) -> Dict[str, Any]
                 f"No se pudo registrar estructura {clean_eid} en PostgreSQL: catálogos vacíos. "
                 "El nivel se guardará localmente."
             )
-            return {"id": clean_eid, "nombre": "Estructura", "niveles_cantidad": 10}
+            return {"id": clean_eid, "nombre": "Estructura", "niveles_cantidad": cant_default}
         await conn.execute("""
             INSERT INTO estructuras (
                 id, geom, nombre, id_categoria, id_tipo, estado, niveles_cantidad, sync_version
@@ -69,15 +79,15 @@ async def _asegurar_estructura_existente(conn, clean_eid: str) -> Dict[str, Any]
                 $1::uuid,
                 ST_SetSRID(ST_MakePoint(-90.5, 14.6), 4326),
                 'Estructura',
-                $2, $3, 'presente', 10, 0
+                $2, $3, 'presente', $4, 0
             )
             ON CONFLICT (id) DO UPDATE SET deleted_at = NULL
-        """, clean_eid, cat_cat_id, cat_tipo_id)
+        """, clean_eid, cat_cat_id, cat_tipo_id, cant_default)
         est_row = await conn.fetchrow(
             "SELECT id::text, nombre, niveles_cantidad FROM estructuras WHERE id = $1::uuid FOR UPDATE",
             clean_eid
         )
-    return dict(est_row) if est_row else {"id": clean_eid, "nombre": "Estructura", "niveles_cantidad": 10}
+    return dict(est_row) if est_row else {"id": clean_eid, "nombre": "Estructura", "niveles_cantidad": cant_default}
 
 
 @router.get("/estructura/{estructura_id}")
@@ -108,7 +118,7 @@ async def get_niveles_by_estructura(estructura_id: str):
                     return {
                         "estructura_id": clean_eid,
                         "nombre_estructura": "Estructura",
-                        "niveles_cantidad": 10,
+                        "niveles_cantidad": 1,
                         "niveles_registrados": 0,
                         "niveles": []
                     }
@@ -234,8 +244,26 @@ async def create_nivel(estructura_id: str, payload: NivelCreateSchema):
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
-            est_data = await _asegurar_estructura_existente(conn, clean_eid)
-            niveles_cantidad = est_data.get('niveles_cantidad') or 10
+            est_data = await _asegurar_estructura_existente(conn, clean_eid, payload.niveles_cantidad)
+
+            # Verificar que la estructura realmente quedó registrada en Postgres.
+            # _asegurar_estructura_existente puede retornar un placeholder si los catálogos
+            # están vacíos, en cuyo caso el INSERT de niveles fallaría con FK violation.
+            est_existe = await conn.fetchval(
+                "SELECT 1 FROM estructuras WHERE id = $1::uuid",
+                clean_eid
+            )
+            if not est_existe:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail={
+                        "error": "estructura_no_sincronizada",
+                        "message": "La estructura aún no ha sido sincronizada con el servidor. "
+                                   "Guarda la estructura en el mapa primero y reintenta."
+                    }
+                )
+
+            niveles_cantidad = est_data.get('niveles_cantidad') or payload.niveles_cantidad or 1
             
             # Contar niveles existentes
             count_row = await conn.fetchval(
@@ -269,7 +297,14 @@ async def create_nivel(estructura_id: str, payload: NivelCreateSchema):
 
             # Insertar nuevo nivel
             clean_nid = parse_uuid_or_none(payload.id)
-            desc_val = payload.descripcion[:50] if payload.descripcion else None
+            # Normalizar descripción: string vacío -> None
+            desc_val = None
+            if payload.descripcion is not None:
+                stripped = payload.descripcion.strip()
+                desc_val = stripped[:50] if stripped else None
+
+            # ON CONFLICT (id): si se re-envía el mismo UUID, actualizar
+            # ON CONFLICT (estructura_id, numero): si ya existe ese nivel, actualizar
             insert_sql = """
             INSERT INTO niveles (id, estructura_id, numero, numero_locales, descripcion, updated_at)
             VALUES (COALESCE($1::uuid, uuid_generate_v4()), $2::uuid, $3, $4, $5, NOW())
@@ -333,9 +368,16 @@ async def patch_nivel(nivel_id: str, payload: NivelPatchSchema):
 
             numero_locales_actual = nivel_row['numero_locales']
             nuevo_numero_locales = payload.numero_locales if payload.numero_locales is not None else numero_locales_actual
-            nueva_descripcion = payload.descripcion if payload.descripcion is not None else nivel_row['descripcion']
-            if nueva_descripcion:
-                nueva_descripcion = nueva_descripcion[:50]
+
+            # Calcular la nueva descripción:
+            # - Si el campo no se envió (None en el payload), conservar el valor actual
+            # - Si se envió (incluso vacío ''), aplicar la normalización (vacío -> None)
+            # Nota: como el schema tiene default=None, usamos __fields_set__ para detectar
+            # si el cliente explicitamente envió el campo
+            if 'descripcion' in payload.model_fields_set:
+                nueva_descripcion = payload.get_descripcion_normalizada()
+            else:
+                nueva_descripcion = nivel_row['descripcion']
 
             # 2. Si se reduce numero_locales, validar pérdida de datos
             if nuevo_numero_locales < numero_locales_actual:

@@ -234,10 +234,18 @@ class LocalService {
       if (response.statusCode == 201 || response.statusCode == 200) {
         final data = json.decode(response.body);
         final loc = Local.fromJson(data);
-        await DatabaseHelper().insertEntity('locales', loc.toMapDB());
+        try {
+          await DatabaseHelper().insertEntity('locales', loc.toMapDB());
+        } catch (dbErr) {
+          // Log pero no fallar el flujo exitoso con el backend
+        }
         return loc;
+      } else if (response.statusCode == 409 || response.statusCode == 422 || response.statusCode == 503) {
+        _handleError(response);
       }
-    } catch (_) {}
+    } catch (e) {
+      if (e is LocalApiException) rethrow;
+    }
 
     // Fallback SQLite
     final nuevoLocal = Local.nuevo(
@@ -278,10 +286,18 @@ class LocalService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final loc = Local.fromJson(data);
-        await DatabaseHelper().insertEntity('locales', loc.toMapDB());
+        try {
+          await DatabaseHelper().insertEntity('locales', loc.toMapDB());
+        } catch (dbErr) {
+          // Log pero no fallar el flujo exitoso con el backend
+        }
         return loc;
+      } else if (response.statusCode == 409 || response.statusCode == 422) {
+        _handleError(response);
       }
-    } catch (_) {}
+    } catch (e) {
+      if (e is LocalApiException) rethrow;
+    }
 
     // Fallback SQLite
     final db = await DatabaseHelper().database;
@@ -300,7 +316,17 @@ class LocalService {
         'sync_dirty': 1,
       };
       await DatabaseHelper().insertEntity('locales', updateData);
-      return Local.fromJson(updateData);
+      return Local(
+        id: localId,
+        idNivel: l['nivel_id'] as String,
+        nombre: updateData['nombre_local'] as String?,
+        idTipo: (updateData['id_tipo'] as num?)?.toInt() ?? 1,
+        idCondicionLocal: (updateData['id_condicion_local'] as num?)?.toInt(),
+        numeroHogares: (updateData['numero_hogares'] as num?)?.toInt(),
+        descripcion: updateData['descripcion'] as String?,
+        updatedAt: DateTime.now(),
+        syncDirty: true,
+      );
     }
     throw LocalApiException(code: 'not_found', message: 'Local no encontrado localmente');
   }

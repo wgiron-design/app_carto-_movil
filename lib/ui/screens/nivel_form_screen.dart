@@ -66,6 +66,7 @@ class _NivelFormScreenState extends State<NivelFormScreen> {
           widget.estructuraId,
           numeroLocales: _numeroLocales,
           descripcion: _descripcionCtrl.text.trim().isEmpty ? null : _descripcionCtrl.text.trim(),
+          nivelesCantidad: widget.nivelesCantidad,
         );
       } else {
         nivelToReturn = await NivelService().editarNivel(
@@ -370,65 +371,95 @@ class _NivelFormScreenState extends State<NivelFormScreen> {
                                 ),
                               ),
                               const SizedBox(height: 16),
-                              InkWell(
-                                borderRadius: BorderRadius.circular(10),
-                                onTap: esNuevo
-                                    ? null
-                                    : () async {
-                                        await Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (c) => LocalListaScreen(
-                                              nivelId: widget.nivelExistente!.id,
-                                              numeroNivel: numeroMostrar,
-                                              numeroLocalesEsperados: _numeroLocales,
-                                            ),
-                                          ),
-                                        );
-                                        if (mounted) setState(() {});
-                                      },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: esNuevo ? AppTheme.surface.withValues(alpha: 0.5) : AppTheme.surface,
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: Colors.white24),
+                              if (esNuevo)
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppTheme.secondary,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    icon: const Icon(Icons.storefront_outlined, size: 20),
+                                    label: const Text(
+                                      'Guardar nivel y registrar locales',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                    ),
+                                    onPressed: _isSaving
+                                        ? null
+                                        : () async {
+                                            final nivel = await _guardarDatos();
+                                            if (nivel != null && mounted) {
+                                              await Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (c) => LocalListaScreen(
+                                                    nivelId: nivel.id,
+                                                    numeroNivel: nivel.numeroNivel,
+                                                    numeroLocalesEsperados: nivel.numeroLocales,
+                                                  ),
+                                                ),
+                                              );
+                                              if (mounted) Navigator.pop(context, nivel);
+                                            }
+                                          },
                                   ),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            Icons.storefront_outlined,
-                                            color: esNuevo
-                                                ? Colors.white38
-                                                : (esCompleto ? Colors.greenAccent : AppTheme.secondary),
-                                            size: 20,
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Text(
-                                            esNuevo
-                                                ? 'Guarda el nivel primero para registrar sus locales'
-                                                : (registrados > 0
-                                                    ? 'Ver locales de este nivel'
-                                                    : 'Aún no hay locales ingresados'),
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: esNuevo ? 12 : 14,
-                                              color: esNuevo ? Colors.white38 : Colors.white,
+                                )
+                              else
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(10),
+                                  onTap: () async {
+                                    await Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (c) => LocalListaScreen(
+                                          nivelId: widget.nivelExistente!.id,
+                                          numeroNivel: numeroMostrar,
+                                          numeroLocalesEsperados: _numeroLocales,
+                                        ),
+                                      ),
+                                    );
+                                    if (mounted) setState(() {});
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.surface,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: Colors.white24),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.storefront_outlined,
+                                              color: esCompleto ? Colors.greenAccent : AppTheme.secondary,
+                                              size: 20,
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                      Icon(
-                                        Icons.chevron_right,
-                                        color: esNuevo ? Colors.white24 : Colors.white70,
-                                      ),
-                                    ],
+                                            const SizedBox(width: 12),
+                                            Text(
+                                              registrados > 0
+                                                  ? 'Ver locales de este nivel'
+                                                  : 'Aún no hay locales ingresados',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 14,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const Icon(
+                                          Icons.chevron_right,
+                                          color: Colors.white70,
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
-                              ),
                             ],
                           ),
                         );
@@ -519,7 +550,7 @@ class _NivelFormScreenState extends State<NivelFormScreen> {
               Expanded(
                 child: OutlinedButton(
                   onPressed: _isSaving ? null : () => Navigator.pop(context),
-                  child: const Text('Anterior / Cancelar', style: TextStyle(fontSize: 12)),
+                  child: const Text('Cancelar', style: TextStyle(fontSize: 12)),
                 ),
               ),
               const SizedBox(width: 8),
@@ -529,7 +560,7 @@ class _NivelFormScreenState extends State<NivelFormScreen> {
                   icon: _isSaving
                       ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.save, size: 16),
-                  label: Text('Guardar', style: const TextStyle(fontSize: 12)),
+                  label: Text(isEditing ? 'Guardar cambios' : 'Guardar', style: const TextStyle(fontSize: 12)),
                   onPressed: (_isSaving || _conflictData != null) ? null : _guardar,
                 ),
               ),
@@ -539,8 +570,8 @@ class _NivelFormScreenState extends State<NivelFormScreen> {
                   style: ElevatedButton.styleFrom(backgroundColor: AppTheme.tertiary),
                   icon: _isSaving
                       ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.skip_next, size: 16),
-                  label: const Text('Continuar', style: TextStyle(fontSize: 12)),
+                      : const Icon(Icons.arrow_forward, size: 16),
+                  label: const Text('Guardar y Continuar →', style: TextStyle(fontSize: 11)),
                   onPressed: _isSaving ? null : () async {
                     Nivel? nivelToUse;
                     if (_conflictData != null) {

@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../../core/models/capa_geometrica.dart';
-import '../../core/models/jerarquia.dart';
 import '../../core/services/hogar_service.dart';
-import '../../core/services/jerarquia_navigator_service.dart';
 import '../widgets/breadcrumb_bar.dart';
 
 class HogarFormScreen extends StatefulWidget {
@@ -507,7 +505,7 @@ class _HogarFormScreenState extends State<HogarFormScreen> {
                       final pop = await _onWillPop();
                       if (pop && context.mounted) Navigator.pop(context, false);
                     },
-                    child: const Text('Anterior / Cancelar'),
+                    child: const Text('Cancelar', style: TextStyle(fontSize: 12)),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -517,7 +515,7 @@ class _HogarFormScreenState extends State<HogarFormScreen> {
                     icon: _isSaving
                         ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.save, size: 16),
-                    label: Text('Guardar', style: const TextStyle(fontSize: 12)),
+                    label: Text(_esEdicion ? 'Guardar cambios' : 'Guardar', style: const TextStyle(fontSize: 12)),
                     onPressed: _isSaving ? null : _guardar,
                   ),
                 ),
@@ -527,23 +525,33 @@ class _HogarFormScreenState extends State<HogarFormScreen> {
                     style: ElevatedButton.styleFrom(backgroundColor: AppTheme.tertiary),
                     icon: _isSaving
                         ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.skip_next, size: 16),
-                    label: const Text('Continuar', style: TextStyle(fontSize: 12)),
+                        : const Icon(Icons.arrow_forward, size: 16),
+                    label: const Text('Guardar y Continuar →', style: TextStyle(fontSize: 11)),
                     onPressed: _isSaving ? null : () async {
                       final hogarIdToUse = await _guardarDatos();
                       if (hogarIdToUse != null && mounted) {
-                        JerarquiaNavigatorService().navegarSiguienteDesdeHogar(
-                          context: context,
-                          estructuraId: '', 
-                          nombreEstructura: '',
-                          nivelId: '', 
-                          numeroNivel: widget.numeroNivel,
-                          localId: widget.localId,
-                          numeroLocalActual: 1, 
-                          totalLocalesEsperados: 1,
-                          numeroHogarActual: widget.numeroHogarActual,
-                          totalHogaresEsperados: widget.totalHogaresEsperados,
-                        );
+                        if (widget.numeroHogarActual < widget.totalHogaresEsperados) {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (c) => HogarFormScreen(
+                                localId: widget.localId,
+                                nombreLocal: widget.nombreLocal,
+                                numeroNivel: widget.numeroNivel,
+                                numeroHogarActual: widget.numeroHogarActual + 1,
+                                totalHogaresEsperados: widget.totalHogaresEsperados,
+                              ),
+                            ),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Se han registrado todos los hogares de este local.'),
+                              backgroundColor: AppTheme.success,
+                            ),
+                          );
+                          Navigator.pop(context, true);
+                        }
                       }
                     },
                   ),

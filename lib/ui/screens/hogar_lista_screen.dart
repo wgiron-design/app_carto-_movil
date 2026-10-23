@@ -70,7 +70,7 @@ class _HogarListaScreenState extends State<HogarListaScreen> {
     final res = _response;
     if (res == null) return;
 
-    if (res.numeroHogaresEsperados != null && res.hogaresRegistrados >= res.numeroHogaresEsperados!) {
+    if (res.hogaresRegistrados >= res.numeroHogaresEsperados) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Se ha alcanzado el límite de ${res.numeroHogaresEsperados} hogares para este local.'),
@@ -85,10 +85,10 @@ class _HogarListaScreenState extends State<HogarListaScreen> {
       MaterialPageRoute(
         builder: (c) => HogarFormScreen(
           localId: widget.localId,
-          nombreLocal: res.nombreLocal ?? widget.nombreLocal,
+          nombreLocal: res.nombreLocal,
           numeroNivel: widget.numeroNivel,
           numeroHogarActual: res.hogaresRegistrados + 1,
-          totalHogaresEsperados: res.numeroHogaresEsperados ?? 1,
+          totalHogaresEsperados: res.numeroHogaresEsperados,
         ),
       ),
     );
@@ -107,10 +107,10 @@ class _HogarListaScreenState extends State<HogarListaScreen> {
       MaterialPageRoute(
         builder: (c) => HogarFormScreen(
           localId: widget.localId,
-          nombreLocal: res.nombreLocal ?? widget.nombreLocal,
+          nombreLocal: res.nombreLocal,
           numeroNivel: widget.numeroNivel,
           numeroHogarActual: index + 1,
-          totalHogaresEsperados: res.numeroHogaresEsperados ?? 1,
+          totalHogaresEsperados: res.numeroHogaresEsperados,
           hogarExistente: h,
         ),
       ),
@@ -270,21 +270,38 @@ class _HogarListaScreenState extends State<HogarListaScreen> {
                         )
                       : (res == null || res.hogares.isEmpty)
                           ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.family_restroom_outlined, size: 64, color: Colors.white.withValues(alpha: 0.3)),
-                                  const SizedBox(height: 16),
-                                  const Text(
-                                    'No hay hogares registrados en este local',
-                                    style: TextStyle(color: Colors.white70, fontSize: 15),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Se esperan $esperados hogares',
-                                    style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13),
-                                  ),
-                                ],
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.family_restroom_outlined, size: 64, color: AppTheme.tertiary.withValues(alpha: 0.4)),
+                                    const SizedBox(height: 16),
+                                    const Text(
+                                      'No hay hogares registrados en este local',
+                                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Se esperan $esperados hogar(es). Comienza registrando el primero.',
+                                      style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 24),
+                                    ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppTheme.tertiary,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      ),
+                                      icon: const Icon(Icons.add, size: 20),
+                                      label: const Text('Registrar Primer Hogar', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                      onPressed: _abrirFormularioNuevo,
+                                    ),
+                                  ],
+                                ),
                               ),
                             )
                           : ListView.builder(

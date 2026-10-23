@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../../core/models/capa_geometrica.dart';
-import '../../core/models/jerarquia.dart';
 import '../../core/services/local_service.dart';
 import '../../core/services/jerarquia_navigator_service.dart';
 import '../widgets/breadcrumb_bar.dart';
@@ -447,68 +446,101 @@ class _LocalFormScreenState extends State<LocalFormScreen> {
                                            ),
                                          ),
                                          const SizedBox(height: 16),
-                                         InkWell(
-                                           borderRadius: BorderRadius.circular(10),
-                                           onTap: esNuevo
-                                               ? null
-                                               : () async {
-                                                   await Navigator.push(
-                                                     context,
-                                                     MaterialPageRoute(
-                                                       builder: (c) => HogarListaScreen(
-                                                         localId: widget.localExistente!.id,
-                                                         nombreLocal: _nombreCtrl.text.trim().isEmpty
-                                                             ? 'Local ${widget.numeroLocalActual}'
-                                                             : _nombreCtrl.text.trim(),
-                                                         numeroNivel: widget.numeroNivel,
-                                                         numeroHogaresEsperados: _numeroHogares,
-                                                       ),
-                                                     ),
-                                                   );
-                                                   if (mounted) setState(() {});
-                                                 },
-                                           child: Container(
-                                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                             decoration: BoxDecoration(
-                                               color: esNuevo ? AppTheme.surface.withValues(alpha: 0.5) : AppTheme.surface,
-                                               borderRadius: BorderRadius.circular(10),
-                                               border: Border.all(color: Colors.white24),
+                                         if (esNuevo)
+                                           SizedBox(
+                                             width: double.infinity,
+                                             child: ElevatedButton.icon(
+                                               style: ElevatedButton.styleFrom(
+                                                 backgroundColor: AppTheme.secondary,
+                                                 foregroundColor: Colors.white,
+                                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                               ),
+                                               icon: const Icon(Icons.family_restroom, size: 20),
+                                               label: const Text(
+                                                 'Guardar local y registrar hogares',
+                                                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                               ),
+                                               onPressed: _isSaving
+                                                   ? null
+                                                   : () async {
+                                                       final localId = await _guardarDatos();
+                                                       if (localId != null && mounted) {
+                                                         await Navigator.push(
+                                                           context,
+                                                           MaterialPageRoute(
+                                                             builder: (c) => HogarListaScreen(
+                                                               localId: localId,
+                                                               nombreLocal: _nombreCtrl.text.trim().isEmpty
+                                                                   ? 'Local ${widget.numeroLocalActual}'
+                                                                   : _nombreCtrl.text.trim(),
+                                                               numeroNivel: widget.numeroNivel,
+                                                               numeroHogaresEsperados: _numeroHogares,
+                                                             ),
+                                                           ),
+                                                         );
+                                                         if (mounted) Navigator.pop(context, true);
+                                                       }
+                                                     },
                                              ),
-                                             child: Row(
-                                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                               children: [
-                                                 Row(
-                                                   children: [
-                                                     Icon(
-                                                       Icons.family_restroom,
-                                                       color: esNuevo
-                                                           ? Colors.white38
-                                                           : (esCompleto ? Colors.greenAccent : AppTheme.tertiary),
-                                                       size: 20,
-                                                     ),
-                                                     const SizedBox(width: 12),
-                                                     Text(
-                                                       esNuevo
-                                                           ? 'Guarda el local primero para registrar sus hogares'
-                                                           : (registrados > 0
-                                                               ? 'Ver hogares de este local'
-                                                               : 'Aún no hay hogares ingresados'),
-                                                       style: TextStyle(
-                                                         fontWeight: FontWeight.w600,
-                                                         fontSize: esNuevo ? 12 : 14,
-                                                         color: esNuevo ? Colors.white38 : Colors.white,
+                                           )
+                                         else
+                                           InkWell(
+                                             borderRadius: BorderRadius.circular(10),
+                                             onTap: () async {
+                                               await Navigator.push(
+                                                 context,
+                                                 MaterialPageRoute(
+                                                   builder: (c) => HogarListaScreen(
+                                                     localId: widget.localExistente!.id,
+                                                     nombreLocal: _nombreCtrl.text.trim().isEmpty
+                                                         ? 'Local ${widget.numeroLocalActual}'
+                                                         : _nombreCtrl.text.trim(),
+                                                     numeroNivel: widget.numeroNivel,
+                                                     numeroHogaresEsperados: _numeroHogares,
+                                                   ),
+                                                 ),
+                                               );
+                                               if (mounted) setState(() {});
+                                             },
+                                             child: Container(
+                                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                               decoration: BoxDecoration(
+                                                 color: AppTheme.surface,
+                                                 borderRadius: BorderRadius.circular(10),
+                                                 border: Border.all(color: Colors.white24),
+                                               ),
+                                               child: Row(
+                                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                                 children: [
+                                                   Row(
+                                                     children: [
+                                                       Icon(
+                                                         Icons.family_restroom,
+                                                         color: esCompleto ? Colors.greenAccent : AppTheme.tertiary,
+                                                         size: 20,
                                                        ),
-                                                     ),
-                                                   ],
-                                                 ),
-                                                 Icon(
-                                                   Icons.chevron_right,
-                                                   color: esNuevo ? Colors.white24 : Colors.white70,
-                                                 ),
-                                               ],
+                                                       const SizedBox(width: 12),
+                                                       Text(
+                                                         registrados > 0
+                                                             ? 'Ver hogares de este local'
+                                                             : 'Aún no hay hogares ingresados',
+                                                         style: const TextStyle(
+                                                           fontWeight: FontWeight.w600,
+                                                           fontSize: 14,
+                                                           color: Colors.white,
+                                                         ),
+                                                       ),
+                                                     ],
+                                                   ),
+                                                   const Icon(
+                                                     Icons.chevron_right,
+                                                     color: Colors.white70,
+                                                   ),
+                                                 ],
+                                               ),
                                              ),
                                            ),
-                                         ),
                                        ],
                                      ),
                                    );
@@ -547,7 +579,7 @@ class _LocalFormScreenState extends State<LocalFormScreen> {
               Expanded(
                 child: OutlinedButton(
                   onPressed: _isSaving ? null : () => Navigator.pop(context, false),
-                  child: const Text('Anterior / Cancelar', style: TextStyle(fontSize: 12)),
+                  child: const Text('Cancelar', style: TextStyle(fontSize: 12)),
                 ),
               ),
               const SizedBox(width: 8),
@@ -557,7 +589,7 @@ class _LocalFormScreenState extends State<LocalFormScreen> {
                   icon: _isSaving
                       ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
                       : const Icon(Icons.save, size: 16),
-                  label: Text('Guardar', style: const TextStyle(fontSize: 12)),
+                  label: Text(_esEdicion ? 'Guardar cambios' : 'Guardar', style: const TextStyle(fontSize: 12)),
                   onPressed: _isSaving ? null : _guardar,
                 ),
               ),
@@ -567,8 +599,8 @@ class _LocalFormScreenState extends State<LocalFormScreen> {
                   style: ElevatedButton.styleFrom(backgroundColor: AppTheme.tertiary),
                   icon: _isSaving
                       ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.skip_next, size: 16),
-                  label: const Text('Continuar', style: TextStyle(fontSize: 12)),
+                      : const Icon(Icons.arrow_forward, size: 16),
+                  label: const Text('Guardar y Continuar →', style: TextStyle(fontSize: 11)),
                   onPressed: _isSaving ? null : () async {
                     final localIdToUse = await _guardarDatos();
                     if (localIdToUse != null && mounted) {

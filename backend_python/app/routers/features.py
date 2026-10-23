@@ -458,8 +458,13 @@ async def create_feature(tabla: str, payload: Dict[str, Any]):
                     sql, feature_id, geom_json,
                     properties.get("nombre"), properties.get("notas"),
                     id_categoria, id_tipo, id_estructura_user, properties.get("estado"),
-                    properties.get("niveles_cantidad", 1),
+                    parse_int_or_none(properties.get("niveles_cantidad")) or 1,
                     created_by, updated_by, device_id
+                )
+            except asyncpg.exceptions.RaiseError as e:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Error en validación espacial de la base de datos: {e.message if hasattr(e, 'message') else str(e)}"
                 )
             except asyncpg.exceptions.ForeignKeyViolationError as e:
                 raise HTTPException(

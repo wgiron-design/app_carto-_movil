@@ -49,19 +49,23 @@ async def _asegurar_nivel_existente(conn, clean_nid: str) -> Dict[str, Any]:
         dummy_est_id = "00000000-0000-0000-0000-000000000001"
         await conn.execute("""
             INSERT INTO estructuras (id, geom, nombre, id_categoria, id_tipo, estado, niveles_cantidad, sync_version)
-            VALUES ($1::uuid, ST_SetSRID(ST_MakePoint(-90.5, 14.6), 4326), 'Estructura', 1, 1, 'presente', 10, 0)
+            VALUES ($1::uuid, ST_SetSRID(ST_MakePoint(-90.6151, 16.1228), 4326), 'Estructura', 1, 1, 'presente', 1, 0)
             ON CONFLICT (id) DO UPDATE SET deleted_at = NULL
         """, dummy_est_id)
+        next_num = await conn.fetchval(
+            "SELECT COALESCE(MAX(numero), 0) + 1 FROM niveles WHERE estructura_id = $1::uuid",
+            dummy_est_id
+        ) or 1
         await conn.execute("""
             INSERT INTO niveles (id, estructura_id, numero, numero_locales, updated_at)
-            VALUES ($1::uuid, $2::uuid, 1, 10, NOW())
+            VALUES ($1::uuid, $2::uuid, $3, 1, NOW())
             ON CONFLICT (id) DO NOTHING
-        """, clean_nid, dummy_est_id)
+        """, clean_nid, dummy_est_id, next_num)
         nivel_row = await conn.fetchrow(
             "SELECT id::text, numero, numero_locales FROM niveles WHERE id = $1::uuid FOR UPDATE",
             clean_nid
         )
-    return dict(nivel_row) if nivel_row else {"id": clean_nid, "numero": 1, "numero_locales": 10}
+    return dict(nivel_row) if nivel_row else {"id": clean_nid, "numero": 1, "numero_locales": 1}
 
 
 @router.get("/nivel/{nivel_id}")
@@ -207,7 +211,22 @@ async def create_local(nivel_id: str, payload: LocalCreateSchema):
     async with pool.acquire() as conn:
         async with conn.transaction():
             nivel_data = await _asegurar_nivel_existente(conn, clean_nid)
-            max_locales = nivel_data.get('numero_locales') or 10
+
+            # Verificar que el nivel realmente exista antes de continuar
+            # (evita violaciones de FK si el placeholder no pudo crearse)
+            nivel_existe = await conn.fetchval(
+                "SELECT 1 FROM niveles WHERE id = $1::uuid", clean_nid
+            )
+            if not nivel_existe:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail={
+                        "error": "nivel_no_sincronizado",
+                        "message": "El nivel padre aún no ha sido sincronizado con el servidor central."
+                    }
+                )
+
+            max_locales = nivel_data.get('numero_locales') or 1
 
             count_actual = await conn.fetchval(
                 "SELECT COUNT(*) FROM locales WHERE nivel_id = $1::uuid",
@@ -348,9 +367,10 @@ async def patch_local(local_id: str, payload: LocalPatchSchema):
                 args.append(payload.numero_hogares)
                 idx += 1
 
-            if payload.descripcion is not None:
+            if "descripcion" in payload.model_fields_set:
+                desc_val = payload.descripcion.strip() if payload.descripcion else None
                 updates.append(f"descripcion = ${idx}")
-                args.append(payload.descripcion)
+                args.append(desc_val)
                 idx += 1
 
             if not updates:

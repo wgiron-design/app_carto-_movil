@@ -210,6 +210,7 @@ class Local {
     return {
       'id': id,
       'nivel_id': idNivel,
+      'nombre': nombre,
       'nombre_local': nombre,
       'id_tipo': idTipo,
       'id_condicion_local': idCondicionLocal,

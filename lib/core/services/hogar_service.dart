@@ -321,8 +321,12 @@ class HogarService {
         final hg = Hogar.fromJson(data);
         await DatabaseHelper().insertEntity('hogares', hg.toMapDB());
         return hg;
+      } else if (response.statusCode == 409 || response.statusCode == 422 || response.statusCode == 503) {
+        _handleError(response);
       }
-    } catch (_) {}
+    } catch (e) {
+      if (e is HogarApiException) rethrow;
+    }
 
     final nuevoHogar = Hogar(
       id: _uuid.v4(),
@@ -392,8 +396,12 @@ class HogarService {
         final hg = Hogar.fromJson(data);
         await DatabaseHelper().insertEntity('hogares', hg.toMapDB());
         return hg;
+      } else if (response.statusCode == 409 || response.statusCode == 422) {
+        _handleError(response);
       }
-    } catch (_) {}
+    } catch (e) {
+      if (e is HogarApiException) rethrow;
+    }
 
     final db = await DatabaseHelper().database;
     final row = await db.query('hogares', where: 'id = ?', whereArgs: [hogarId]);
@@ -422,7 +430,28 @@ class HogarService {
         'sync_dirty': 1,
       };
       await DatabaseHelper().insertEntity('hogares', updateData);
-      return Hogar.fromJson(updateData);
+      return Hogar(
+        id: hogarId,
+        idLocal: h['local_id'] as String,
+        jefeFamilia: (updateData['jefe_familia'] as String?) ?? '',
+        idSexo: (updateData['id_sexo'] as num?)?.toInt(),
+        idIdioma: (updateData['id_idioma'] as num?)?.toInt(),
+        direccion: updateData['direccion'] as String?,
+        totalHabitantes: (updateData['total_habitantes'] as num?)?.toInt(),
+        personas_0_5: (updateData['personas_0_5'] as num?)?.toInt(),
+        personas_6_11: (updateData['personas_6_11'] as num?)?.toInt(),
+        personas_12_17: (updateData['personas_12_17'] as num?)?.toInt(),
+        personas_18_23: (updateData['personas_18_23'] as num?)?.toInt(),
+        personas_24_34: (updateData['personas_24_34'] as num?)?.toInt(),
+        personas_35_44: (updateData['personas_35_44'] as num?)?.toInt(),
+        personas_45_59: (updateData['personas_45_59'] as num?)?.toInt(),
+        personas_60_69: (updateData['personas_60_69'] as num?)?.toInt(),
+        personas_70_79: (updateData['personas_70_79'] as num?)?.toInt(),
+        personas_80_mas: (updateData['personas_80_mas'] as num?)?.toInt(),
+        personasNoEdad: (updateData['personas_no_edad'] as num?)?.toInt(),
+        updatedAt: DateTime.now(),
+        syncDirty: true,
+      );
     }
     throw HogarApiException(code: 'not_found', message: 'Hogar no encontrado localmente');
   }

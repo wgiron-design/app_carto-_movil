@@ -157,12 +157,13 @@ class NivelService {
     }
   }
 
-  Future<Nivel> crearNivel(String estructuraId, {required int numeroLocales, String? descripcion}) async {
+  Future<Nivel> crearNivel(String estructuraId, {required int numeroLocales, String? descripcion, int? nivelesCantidad}) async {
     try {
       final uri = Uri.parse('$_baseUrl/api/niveles/estructura/$estructuraId');
       final body = json.encode({
         'numero_locales': numeroLocales,
         if (descripcion != null) 'descripcion': descripcion,
+        if (nivelesCantidad != null && nivelesCantidad > 0) 'niveles_cantidad': nivelesCantidad,
       });
 
       final response = await http.post(
@@ -174,9 +175,14 @@ class NivelService {
       if (response.statusCode == 201 || response.statusCode == 200) {
         final data = json.decode(response.body);
         final nivel = Nivel.fromJson(data);
-        await DatabaseHelper().insertEntity('niveles', nivel.toMapDB());
+        try {
+          await DatabaseHelper().insertEntity('niveles', nivel.toMapDB());
+        } catch (_) {}
         return nivel;
       } else if (response.statusCode == 409 || response.statusCode == 422) {
+        _handleError(response);
+      } else if (response.statusCode == 503) {
+        // La estructura aún no fue sincronizada con Postgres
         _handleError(response);
       }
     } catch (e) {
@@ -185,7 +191,10 @@ class NivelService {
 
     // Fallback SQLite
     final db = await DatabaseHelper().database;
-    final countMaps = await db.rawQuery('SELECT COUNT(*) as c FROM niveles WHERE estructura_id = ?', [estructuraId]);
+    // Filtrar deleted_at IS NULL para no contar niveles eliminados (soft-delete local)
+    final countMaps = await db.rawQuery(
+        'SELECT COUNT(*) as c FROM niveles WHERE estructura_id = ? AND deleted_at IS NULL',
+        [estructuraId]);
     final nextNum = ((countMaps.first['c'] as num?)?.toInt() ?? 0) + 1;
     final nuevoNivel = Nivel.nuevo(
       idEstructura: estructuraId,
@@ -227,17 +236,30 @@ class NivelService {
     final row = await db.query('niveles', where: 'id = ?', whereArgs: [nivelId]);
     if (row.isNotEmpty) {
       final n = row.first;
+      // Normalizar descripción: string vacío se convierte a null
+      final String? descNormalizada = descripcion != null
+          ? (descripcion.trim().isEmpty ? null : descripcion.trim())
+          : n['descripcion'] as String?;
       final updateData = <String, dynamic>{
         'id': nivelId,
         'estructura_id': n['estructura_id'],
         'numero': n['numero'],
         'numero_locales': numeroLocales ?? n['numero_locales'],
-        'descripcion': descripcion ?? n['descripcion'],
+        'descripcion': descNormalizada,
         'updated_at': DateTime.now().toIso8601String(),
         'sync_dirty': 1,
       };
       await DatabaseHelper().insertEntity('niveles', updateData);
-      return Nivel.fromJson(updateData);
+      // Retornar usando los campos correctos que Nivel.fromJson espera
+      return Nivel(
+        id: nivelId,
+        idEstructura: n['estructura_id'] as String,
+        numeroNivel: (n['numero'] as num).toInt(),
+        numeroLocales: (updateData['numero_locales'] as num?)?.toInt() ?? 1,
+        descripcion: descNormalizada,
+        updatedAt: DateTime.now(),
+        syncDirty: true,
+      );
     }
     throw NivelApiException(code: 'not_found', message: 'Nivel no encontrado localmente');
   }

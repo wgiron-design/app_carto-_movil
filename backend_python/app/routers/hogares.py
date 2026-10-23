@@ -47,6 +47,49 @@ class HogarPatchSchema(BaseModel):
     personas_no_edad: Optional[int] = Field(default=None, ge=0)
 
 
+async def _asegurar_local_existente(conn, clean_lid: str) -> Optional[Dict[str, Any]]:
+    """
+    Asegura que el local exista en PostgreSQL.
+    Si el local fue creado en el cliente móvil y aún no se sincroniza a la base central,
+    inserta un registro base para mantener la integridad referencial.
+    """
+    local_row = await conn.fetchrow(
+        "SELECT id::text, numero_hogares FROM locales WHERE id = $1::uuid FOR UPDATE",
+        clean_lid
+    )
+    if not local_row:
+        # Obtener un nivel existente para asociar el local
+        niv_id = await conn.fetchval("SELECT id::text FROM niveles LIMIT 1")
+        if not niv_id:
+            dummy_est_id = "00000000-0000-0000-0000-000000000001"
+            await conn.execute("""
+                INSERT INTO estructuras (id, geom, nombre, id_categoria, id_tipo, estado, niveles_cantidad, sync_version)
+                VALUES ($1::uuid, ST_SetSRID(ST_MakePoint(-90.6151, 16.1228), 4326), 'Estructura', 1, 1, 'presente', 1, 0)
+                ON CONFLICT (id) DO UPDATE SET deleted_at = NULL
+            """, dummy_est_id)
+            next_num = await conn.fetchval(
+                "SELECT COALESCE(MAX(numero), 0) + 1 FROM niveles WHERE estructura_id = $1::uuid",
+                dummy_est_id
+            ) or 1
+            niv_id = "00000000-0000-0000-0000-000000000002"
+            await conn.execute("""
+                INSERT INTO niveles (id, estructura_id, numero, numero_locales, updated_at)
+                VALUES ($1::uuid, $2::uuid, $3, 1, NOW())
+                ON CONFLICT (id) DO NOTHING
+            """, niv_id, dummy_est_id, next_num)
+
+        await conn.execute("""
+            INSERT INTO locales (id, nivel_id, nombre_local, id_tipo, numero_hogares, updated_at)
+            VALUES ($1::uuid, $2::uuid, 'Local', 1, 1, NOW())
+            ON CONFLICT (id) DO NOTHING
+        """, clean_lid, niv_id)
+        local_row = await conn.fetchrow(
+            "SELECT id::text, numero_hogares FROM locales WHERE id = $1::uuid FOR UPDATE",
+            clean_lid
+        )
+    return dict(local_row) if local_row else None
+
+
 @router.get("/local/{local_id}")
 async def get_hogares_by_local(local_id: str):
     """
@@ -112,6 +155,7 @@ async def get_hogares_by_local(local_id: str):
             "local_id": clean_lid,
             "nombre_local": local_row['nombre_local'],
             "numero_hogares_esperados": local_row['numero_hogares'],
+            "id_tipo": local_row['id_tipo'],
             "id_tipo_local": local_row['id_tipo'],
             "id_condicion_local": local_row['id_condicion_local'],
             "hogares_registrados": len(hogares_list),
@@ -135,14 +179,14 @@ async def create_hogar(local_id: str, payload: HogarCreateSchema):
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
-            local_row = await conn.fetchrow(
-                "SELECT id::text, numero_hogares FROM locales WHERE id = $1::uuid FOR UPDATE",
-                clean_lid
-            )
+            local_row = await _asegurar_local_existente(conn, clean_lid)
             if not local_row:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail={"error": "local_no_encontrado", "message": "El local especificado no existe"}
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail={
+                        "error": "local_no_sincronizado",
+                        "message": "El local padre aún no ha sido sincronizado con el servidor central."
+                    }
                 )
 
             max_hogares = local_row['numero_hogares']

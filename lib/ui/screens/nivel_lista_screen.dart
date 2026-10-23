@@ -39,8 +39,21 @@ class _NivelListaScreenState extends State<NivelListaScreen> {
     try {
       final data = await NivelService().getNivelesByEstructura(widget.puntoEstructura.id);
       if (mounted) {
+        final cantNivelesReales = widget.puntoEstructura.nivelesCantidad > 0
+            ? widget.puntoEstructura.nivelesCantidad
+            : data.nivelesCantidad;
+        final nombreReal = (data.nombreEstructura == 'Estructura' && widget.puntoEstructura.nombre.isNotEmpty)
+            ? widget.puntoEstructura.nombre
+            : data.nombreEstructura;
+
         setState(() {
-          _data = data;
+          _data = NivelListResponse(
+            estructuraId: data.estructuraId,
+            nombreEstructura: nombreReal,
+            nivelesCantidad: cantNivelesReales,
+            nivelesRegistrados: data.nivelesRegistrados,
+            niveles: data.niveles,
+          );
           _isLoading = false;
         });
       }

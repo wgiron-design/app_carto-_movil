@@ -18,6 +18,7 @@ typedef AtributosPuntoResult = ({
   EstadoEstructura estado,
   int nivelesCantidad,
   String notas,
+  bool irANiveles,  // true si el usuario pulsó "Gestionar Niveles"
 });
 
 const List<CatalogoItem> kTiposEstructuraDefault = [
@@ -125,7 +126,10 @@ class DialogoAtributosPunto extends StatefulWidget {
   final int? nivelesInicial;
   final String? notasIniciales;
   final bool soloLectura;
-  final VoidCallback? onAbrirNiveles;
+
+  /// Si es true, el footer muestra el botón "Gestionar Niveles".
+  /// Al pulsarlo se valida el formulario y se cierra el diálogo con irANiveles=true.
+  final bool mostrarBotonNiveles;
 
   /// URL base del backend (ej. 'http://10.0.2.2:8000'). Se pasa desde map_screen.
   final String baseUrl;
@@ -144,7 +148,7 @@ class DialogoAtributosPunto extends StatefulWidget {
     this.nivelesInicial,
     this.notasIniciales,
     this.soloLectura = false,
-    this.onAbrirNiveles,
+    this.mostrarBotonNiveles = false,
   });
 
   bool get esModoEdicion => nombreInicial != null;
@@ -443,11 +447,26 @@ class _DialogoAtributosPuntoState extends State<DialogoAtributosPunto> {
                   estado: _estado,
                   nivelesCantidad: _niveles,
                   notas: _notasCtrl.text.trim(),
+                  irANiveles: false,
                 ) as AtributosPuntoResult);
               },
+              onAbrirNiveles: widget.mostrarBotonNiveles
+                  ? () {
+                      if (!_formKey.currentState!.validate()) return;
+                      Navigator.pop(context, (
+                        nombre: _nombreCtrl.text.trim(),
+                        idCategoria: _idCategoria,
+                        idTipo: _idTipo,
+                        idEstructuraUser: int.tryParse(_idUserCtrl.text.trim()),
+                        estado: _estado,
+                        nivelesCantidad: _niveles,
+                        notas: _notasCtrl.text.trim(),
+                        irANiveles: true,
+                      ) as AtributosPuntoResult);
+                    }
+                  : null,
               labelConfirmar: esModoEdicion ? 'Guardar Cambios' : 'Ingresar información',
               soloLectura: soloLectura,
-              onAbrirNiveles: widget.onAbrirNiveles,
             ),
           ],
         ),
@@ -845,6 +864,8 @@ Widget _buildFooter({
   required VoidCallback onConfirmar,
   required String labelConfirmar,
   bool soloLectura = false,
+  /// Callback para el botón "Gestionar Niveles". Si es null, el botón no aparece.
+  /// Debe validar el formulario y cerrar el diálogo con irANiveles=true.
   VoidCallback? onAbrirNiveles,
 }) {
   return Container(
@@ -866,6 +887,7 @@ Widget _buildFooter({
                 backgroundColor: const Color(0xFF4FC3F7),
                 foregroundColor: Colors.white,
               ),
+              // Valida el form y retorna el resultado con irANiveles=true
               onPressed: onAbrirNiveles,
             ),
           ),

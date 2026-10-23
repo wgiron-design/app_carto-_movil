@@ -1246,11 +1246,9 @@ class _MapScreenState extends State<MapScreen> {
     final auth = Provider.of<AuthController>(context, listen: false);
 
     // ── PASO 1: Crear el punto INMEDIATAMENTE con datos mínimos ──────────────
-    // Esto garantiza que la geometría queda en BD desde el primer tap,
-    // independientemente de si el usuario completa el formulario.
     final puntoBase = PuntoEstructura.nuevo(
       coordenadas: punto,
-      nombre: '',  // nombre vacío inicial
+      nombre: '',
       idCategoria: 1,
       idTipo: 1,
       estado: EstadoEstructura.presente,
@@ -1260,9 +1258,6 @@ class _MapScreenState extends State<MapScreen> {
       deviceId: auth.deviceId,
     );
 
-    // ── PASO 1: Registrar el punto localmente (SQLite) ANTES de abrir formulario.
-    // Se usa crearPuntoDraft — NO envía a PostGIS aún, evitando que la posterior
-    // llamada a actualizarPunto dispare el ON CONFLICT que incrementaría sync_version.
     digCtrl.crearPuntoDraft(puntoBase);
 
     // ── PASO 2: Mostrar formulario de atributos ───────────────────────────────
@@ -1303,8 +1298,9 @@ class _MapScreenState extends State<MapScreen> {
       // Persistir actualización de atributos
       await digCtrl.actualizarPunto(puntoActualizado);
 
-      // Enviar a PostGIS en segundo plano para registrar inmediatamente en el backend
-      PostGISService().guardarFeature('estructuras', puntoActualizado.toGeoJson()).catchError((_) => false);
+      // Enviar a PostGIS y ESPERAR antes de navegar a niveles para garantizar
+      // que la estructura exista en Postgres al crear el primer nivel
+      await PostGISService().guardarFeature('estructuras', puntoActualizado.toGeoJson()).catchError((_) => false);
 
       // ── PASO 4: Navegar a JerarquiaScreen ────────────────────────────────
       if (!mounted) return;
@@ -1627,18 +1623,7 @@ class _MapScreenState extends State<MapScreen> {
                             nivelesInicial: punto.nivelesCantidad,
                             notasIniciales: punto.notas,
                             soloLectura: !esPropietario,
-                            onAbrirNiveles: () async {
-                              // T4: usar mapCtx (contexto del MapScreen) para evitar
-                              // NavigatorState inválido tras cerrar el BottomSheet
-                              Navigator.pop(mapCtx);
-                              if (!mapCtx.mounted) return;
-                              await Navigator.push(
-                                mapCtx,
-                                MaterialPageRoute(
-                                  builder: (_) => NivelListaScreen(puntoEstructura: punto),
-                                ),
-                              );
-                            },
+                            mostrarBotonNiveles: esPropietario,  // muestra botón solo si puede editar
                           ),
                         );
                         if (result != null && mounted && esPropietario) {
@@ -1666,14 +1651,33 @@ class _MapScreenState extends State<MapScreen> {
                             deviceId: puntoActual.deviceId ?? punto.deviceId ?? auth.deviceId,
                             syncVersion: puntoActual.syncVersion,
                           );
+                          // 1. Siempre guardar cambios en SQLite primero
                           await digCtrl.actualizarPunto(puntoEditado);
+                          // 2. Enviar a PostGIS y ESPERAR la respuesta para que Postgres
+                          //    quede actualizado antes de cargar NivelListaScreen
+                          await PostGISService()
+                              .guardarFeature('estructuras', puntoEditado.toGeoJson())
+                              .catchError((_) => false);
+
                           if (!mapCtx.mounted) return;
-                          ScaffoldMessenger.of(mapCtx).showSnackBar(
-                            SnackBar(
-                              content: Text('✅ Estructura "${result.nombre}" actualizada.'),
-                              backgroundColor: AppTheme.success,
-                            ),
-                          );
+
+                          // 3. Si el usuario pulsó "Gestionar Niveles", navegar directamente
+                          if (result.irANiveles) {
+                            await Navigator.push(
+                              mapCtx,
+                              MaterialPageRoute(
+                                builder: (_) => NivelListaScreen(puntoEstructura: puntoEditado),
+                              ),
+                            );
+                          } else {
+                            // Solo guardó, mostrar confirmación
+                            ScaffoldMessenger.of(mapCtx).showSnackBar(
+                              SnackBar(
+                                content: Text('✅ Estructura "${result.nombre}" actualizada.'),
+                                backgroundColor: AppTheme.success,
+                              ),
+                            );
+                          }
                         }
                       },
                     ),

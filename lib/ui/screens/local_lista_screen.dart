@@ -291,21 +291,38 @@ class _LocalListaScreenState extends State<LocalListaScreen> {
                         )
                       : (res == null || res.locales.isEmpty)
                           ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.storefront_outlined, size: 64, color: Colors.white.withValues(alpha: 0.3)),
-                                  const SizedBox(height: 16),
-                                  const Text(
-                                    'No hay locales registrados en este nivel',
-                                    style: TextStyle(color: Colors.white70, fontSize: 15),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Se esperan $esperados locales',
-                                    style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13),
-                                  ),
-                                ],
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.storefront_outlined, size: 64, color: AppTheme.secondary.withValues(alpha: 0.4)),
+                                    const SizedBox(height: 16),
+                                    const Text(
+                                      'No hay locales registrados en este nivel',
+                                      style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Se esperan $esperados local(es). Comienza registrando el primero.',
+                                      style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 24),
+                                    ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppTheme.secondary,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      ),
+                                      icon: const Icon(Icons.add, size: 20),
+                                      label: const Text('Registrar Primer Local', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                      onPressed: _abrirFormularioNuevo,
+                                    ),
+                                  ],
+                                ),
                               ),
                             )
                           : ListView.builder(

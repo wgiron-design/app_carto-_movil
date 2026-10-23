@@ -42,12 +42,13 @@ class DatabaseHelper {
 
     return await openDatabase(
       dbPath,
-      version: 10,
+      version: 11,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onConfigure: _onConfigure,
       onOpen: (db) async {
         await _seedCatalogos(db);
+        await _asegurarColumnasJerarquia(db);
       },
     );
   }
@@ -271,6 +272,88 @@ class DatabaseHelper {
         await db.execute('CREATE INDEX IF NOT EXISTS idx_estructuras_id_user ON estructuras (id_estructura_user)');
       } catch (_) {}
     }
+    if (oldVersion < 11) {
+      await _asegurarColumnasJerarquia(db);
+    }
+  }
+
+  /// Verifica e inserta dinámicamente las columnas necesarias para la jerarquía completa
+  /// (niveles, locales, hogares) en bases de datos SQLite preexistentes o actualizadas.
+  Future<void> _asegurarColumnasJerarquia(Database db) async {
+    // ── Columnas de niveles ──────────────────────────────────────────────────
+    try {
+      final infoNiv = await db.rawQuery("PRAGMA table_info('niveles')");
+      final colsNiv = infoNiv.map((r) => r['name'] as String).toSet();
+      if (!colsNiv.contains('numero_locales')) {
+        await db.execute('ALTER TABLE niveles ADD COLUMN numero_locales INTEGER DEFAULT 1');
+      }
+      if (!colsNiv.contains('descripcion')) {
+        await db.execute('ALTER TABLE niveles ADD COLUMN descripcion TEXT');
+      }
+      if (!colsNiv.contains('created_by')) {
+        await db.execute('ALTER TABLE niveles ADD COLUMN created_by TEXT');
+      }
+      if (!colsNiv.contains('updated_by')) {
+        await db.execute('ALTER TABLE niveles ADD COLUMN updated_by TEXT');
+      }
+      if (!colsNiv.contains('sync_version')) {
+        await db.execute('ALTER TABLE niveles ADD COLUMN sync_version INTEGER DEFAULT 0');
+      }
+      if (!colsNiv.contains('deleted_at')) {
+        await db.execute('ALTER TABLE niveles ADD COLUMN deleted_at TEXT');
+      }
+    } catch (e) {
+      debugPrint('[DatabaseHelper] Error asegurando columnas de niveles: $e');
+    }
+
+    // ── Columnas de locales ──────────────────────────────────────────────────
+    try {
+      final infoLoc = await db.rawQuery("PRAGMA table_info('locales')");
+      final colsLoc = infoLoc.map((r) => r['name'] as String).toSet();
+      if (!colsLoc.contains('nombre_local')) {
+        await db.execute('ALTER TABLE locales ADD COLUMN nombre_local TEXT');
+      }
+      if (!colsLoc.contains('id_tipo')) {
+        await db.execute('ALTER TABLE locales ADD COLUMN id_tipo INTEGER DEFAULT 1');
+      }
+      if (!colsLoc.contains('id_condicion_local')) {
+        await db.execute('ALTER TABLE locales ADD COLUMN id_condicion_local INTEGER');
+      }
+      if (!colsLoc.contains('descripcion')) {
+        await db.execute('ALTER TABLE locales ADD COLUMN descripcion TEXT');
+      }
+      if (!colsLoc.contains('sync_version')) {
+        await db.execute('ALTER TABLE locales ADD COLUMN sync_version INTEGER DEFAULT 0');
+      }
+      if (!colsLoc.contains('deleted_at')) {
+        await db.execute('ALTER TABLE locales ADD COLUMN deleted_at TEXT');
+      }
+    } catch (e) {
+      debugPrint('[DatabaseHelper] Error asegurando columnas de locales: $e');
+    }
+
+    // ── Columnas de hogares ──────────────────────────────────────────────────
+    try {
+      final infoHog = await db.rawQuery("PRAGMA table_info('hogares')");
+      final colsHog = infoHog.map((r) => r['name'] as String).toSet();
+      if (!colsHog.contains('id_sexo')) {
+        await db.execute('ALTER TABLE hogares ADD COLUMN id_sexo INTEGER');
+      }
+      if (!colsHog.contains('id_idioma')) {
+        await db.execute('ALTER TABLE hogares ADD COLUMN id_idioma INTEGER');
+      }
+      if (!colsHog.contains('direccion')) {
+        await db.execute('ALTER TABLE hogares ADD COLUMN direccion TEXT');
+      }
+      if (!colsHog.contains('sync_version')) {
+        await db.execute('ALTER TABLE hogares ADD COLUMN sync_version INTEGER DEFAULT 0');
+      }
+      if (!colsHog.contains('deleted_at')) {
+        await db.execute('ALTER TABLE hogares ADD COLUMN deleted_at TEXT');
+      }
+    } catch (e) {
+      debugPrint('[DatabaseHelper] Error asegurando columnas de hogares: $e');
+    }
   }
 
   Future<void> _onConfigure(Database db) async {
@@ -381,8 +464,13 @@ class DatabaseHelper {
         estructura_id TEXT,
         numero INTEGER,
         numero_locales INTEGER DEFAULT 1,
+        descripcion TEXT,
         updated_at TEXT,
         sync_dirty INTEGER DEFAULT 1,
+        created_by TEXT,
+        updated_by TEXT,
+        sync_version INTEGER DEFAULT 0,
+        deleted_at TEXT,
         FOREIGN KEY (estructura_id) REFERENCES estructuras (id) ON DELETE CASCADE
       )
     ''');
@@ -392,11 +480,17 @@ class DatabaseHelper {
         id TEXT PRIMARY KEY,
         nivel_id TEXT,
         nombre TEXT,
+        nombre_local TEXT,
         uso_actual TEXT,
         ocupacion TEXT,
+        id_tipo INTEGER DEFAULT 1,
+        id_condicion_local INTEGER,
         numero_hogares INTEGER,
+        descripcion TEXT,
         updated_at TEXT,
         sync_dirty INTEGER DEFAULT 1,
+        sync_version INTEGER DEFAULT 0,
+        deleted_at TEXT,
         FOREIGN KEY (nivel_id) REFERENCES niveles (id) ON DELETE CASCADE
       )
     ''');
@@ -406,8 +500,11 @@ class DatabaseHelper {
         id TEXT PRIMARY KEY,
         local_id TEXT,
         jefe_familia TEXT,
+        id_sexo INTEGER,
         sexo_jefe TEXT,
+        id_idioma INTEGER,
         idioma TEXT,
+        direccion TEXT,
         total_habitantes INTEGER,
         personas_0_5 INTEGER,
         personas_6_11 INTEGER,
@@ -422,6 +519,8 @@ class DatabaseHelper {
         personas_no_edad INTEGER,
         updated_at TEXT,
         sync_dirty INTEGER DEFAULT 1,
+        sync_version INTEGER DEFAULT 0,
+        deleted_at TEXT,
         FOREIGN KEY (local_id) REFERENCES locales (id) ON DELETE CASCADE
       )
     ''');
@@ -431,14 +530,25 @@ class DatabaseHelper {
 
   Future<void> insertEntity(String table, Map<String, dynamic> data) async {
     final db = await database;
-    if (!data.containsKey('id') || data['id'] == null) {
-      data['id'] = uuid.v4();
+    final cleanData = Map<String, dynamic>.from(data);
+    if (!cleanData.containsKey('id') || cleanData['id'] == null) {
+      cleanData['id'] = uuid.v4();
     }
-    data['updated_at'] = _now();
-    data['sync_dirty'] = 1;
-    int count = await db.update(table, data, where: 'id = ?', whereArgs: [data['id']]);
+    cleanData['updated_at'] = _now();
+    cleanData['sync_dirty'] = 1;
+
+    // Filtrar para evitar enviar columnas inexistentes a SQLite
+    try {
+      final info = await db.rawQuery("PRAGMA table_info('$table')");
+      final validCols = info.map((r) => r['name'] as String).toSet();
+      if (validCols.isNotEmpty) {
+        cleanData.removeWhere((k, v) => !validCols.contains(k));
+      }
+    } catch (_) {}
+
+    int count = await db.update(table, cleanData, where: 'id = ?', whereArgs: [cleanData['id']]);
     if (count == 0) {
-      await db.insert(table, data);
+      await db.insert(table, cleanData);
     }
   }
 
